@@ -1,0 +1,217 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@color/color_surface"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/space_lg"
+        android:paddingEnd="@dimen/space_sm">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/app_name"
+            android:textColor="@color/color_text_primary"
+            android:textSize="@dimen/text_title"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/button_logout"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:background="@drawable/bg_button_secondary"
+            android:text="@string/logout" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@color/color_surface"
+        android:orientation="horizontal"
+        android:padding="@dimen/space_sm">
+
+        <Button
+            android:id="@+id/button_nav_chat"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/bg_filter_unselected"
+            android:text="@string/chat" />
+
+        <Button
+            android:id="@+id/button_nav_history"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="@dimen/space_sm"
+            android:layout_weight="1"
+            android:background="@drawable/bg_filter_selected"
+            android:text="@string/history" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/color_surface"
+        android:orientation="vertical"
+        android:padding="@dimen/history_filter_gap">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/history_filter_control_height"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/input_search"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/bg_text_field"
+                android:hint="@string/search"
+                android:singleLine="true"
+                android:textSize="@dimen/history_filter_text" />
+
+            <ImageButton
+                android:id="@+id/button_search"
+                android:layout_width="@dimen/history_filter_control_height"
+                android:layout_height="@dimen/history_filter_control_height"
+                android:layout_marginStart="@dimen/history_filter_gap"
+                android:background="@drawable/bg_button_secondary"
+                android:contentDescription="@string/search"
+                android:src="@drawable/ic_search" />
+
+            <ImageButton
+                android:id="@+id/button_clear_search"
+                android:layout_width="@dimen/history_filter_control_height"
+                android:layout_height="@dimen/history_filter_control_height"
+                android:layout_marginStart="@dimen/history_filter_gap"
+                android:background="@drawable/bg_button_secondary"
+                android:contentDescription="@string/clear"
+                android:src="@drawable/ic_clear" />
+        </LinearLayout>
+
+        <RadioGroup
+            android:id="@+id/group_type_filter"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/history_filter_row_height"
+            android:layout_marginTop="@dimen/history_filter_gap"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/filter_all"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:checked="true"
+                android:text="All"
+                android:textSize="@dimen/history_filter_text" />
+
+            <RadioButton
+                android:id="@+id/filter_images"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="Images"
+                android:textSize="@dimen/history_filter_text" />
+
+            <RadioButton
+                android:id="@+id/filter_videos"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="Videos"
+                android:textSize="@dimen/history_filter_text" />
+
+            <RadioButton
+                android:id="@+id/filter_files"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="Files"
+                android:textSize="@dimen/history_filter_text" />
+        </RadioGroup>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/history_filter_control_height"
+            android:layout_marginTop="@dimen/history_filter_gap"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/input_date_from"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/bg_text_field"
+                android:clickable="true"
+                android:focusable="false"
+                android:hint="@string/date_from"
+                android:inputType="none"
+                android:singleLine="true"
+                android:textSize="@dimen/history_filter_text" />
+
+            <EditText
+                android:id="@+id/input_date_to"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="@dimen/history_filter_gap"
+                android:layout_weight="1"
+                android:background="@drawable/bg_text_field"
+                android:clickable="true"
+                android:focusable="false"
+                android:hint="@string/date_to"
+                android:inputType="none"
+                android:singleLine="true"
+                android:textSize="@dimen/history_filter_text" />
+        </LinearLayout>
+
+        <Spinner
+            android:id="@+id/spinner_recent"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/history_filter_control_height"
+            android:layout_marginTop="@dimen/history_filter_gap"
+            android:entries="@array/recent_filter_labels"
+            android:spinnerMode="dropdown" />
+
+        <CheckBox
+            android:id="@+id/check_search_body"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/history_filter_row_height"
+            android:text="@string/body_search"
+            android:textSize="@dimen/history_filter_text" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/list_history"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:padding="@dimen/space_sm" />
+
+        <ProgressBar
+            android:id="@+id/progress_history"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/text_history_empty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/no_results"
+            android:textColor="@color/color_text_secondary"
+            android:visibility="gone" />
+    </FrameLayout>
+</LinearLayout>

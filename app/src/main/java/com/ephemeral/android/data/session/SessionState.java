@@ -1,0 +1,12 @@
+package com.ephemeral.android.data.session;
+
+public enum SessionState {
+    UNKNOWN_SESSION,
+    UNAUTHENTICATED_SETUP,
+    UNAUTHENTICATED_LOGIN,
+    AUTHENTICATED_CHAT,
+    AUTHENTICATED_HISTORY,
+    MEDIA_VIEWER_OPEN,
+    TEXT_PREVIEW_OPEN,
+    SESSION_EXPIRED
+}

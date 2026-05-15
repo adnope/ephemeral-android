@@ -1,0 +1,5 @@
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/color_bubble_text" />
+    <corners android:radius="@dimen/row_radius" />
+    <padding android:left="10dp" android:top="8dp" android:right="10dp" android:bottom="8dp" />
+</shape>

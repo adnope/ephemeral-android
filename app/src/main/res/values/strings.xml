@@ -1,0 +1,37 @@
+<resources>
+    <string name="app_name">Ephemeral</string>
+    <string name="login_setup_subtitle">Create your first account</string>
+    <string name="login_sign_in_subtitle">Sign in to continue</string>
+    <string name="server_url">Server URL</string>
+    <string name="username">Username</string>
+    <string name="password">Password</string>
+    <string name="create_account">Create account</string>
+    <string name="login">Login</string>
+    <string name="chat">Chat</string>
+    <string name="history">History</string>
+    <string name="logout">Logout</string>
+    <string name="send">Send</string>
+    <string name="attach">Attach</string>
+    <string name="retry">Retry</string>
+    <string name="delete">Delete</string>
+    <string name="download">Download</string>
+    <string name="view">View</string>
+    <string name="copy">Copy</string>
+    <string name="copied">Copied</string>
+    <string name="close">Close</string>
+    <string name="search">Search</string>
+    <string name="clear">Clear</string>
+    <string name="no_messages">No messages</string>
+    <string name="no_results">No results</string>
+    <string name="upload_queue">Uploads</string>
+    <string name="clear_completed">Clear completed</string>
+    <string name="body_search">Search file bodies</string>
+    <string name="date_from">From</string>
+    <string name="date_to">To</string>
+    <string name="confirm_delete_title">Delete permanently?</string>
+    <string name="confirm_delete_message">This item will be removed from the server.</string>
+    <string name="cancel">Cancel</string>
+    <string name="preview_loading">Loading preview...</string>
+    <string name="preview_plaintext">Plain text</string>
+    <string name="release_api_missing">Release build requires the mobile API endpoint contract before use.</string>
+</resources>

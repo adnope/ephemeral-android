@@ -1,0 +1,27 @@
+<resources>
+    <dimen name="space_xs">4dp</dimen>
+    <dimen name="space_sm">8dp</dimen>
+    <dimen name="space_md">12dp</dimen>
+    <dimen name="space_lg">16dp</dimen>
+    <dimen name="space_xl">24dp</dimen>
+    <dimen name="touch_target">48dp</dimen>
+    <dimen name="thumb_size">88dp</dimen>
+    <dimen name="history_thumb_size">112dp</dimen>
+    <dimen name="history_grid_filename_text">12sp</dimen>
+    <dimen name="history_grid_metadata_text">10sp</dimen>
+    <dimen name="history_grid_action_size">32dp</dimen>
+    <dimen name="history_grid_file_icon_size">29dp</dimen>
+    <dimen name="history_grid_file_cell_padding">4dp</dimen>
+    <dimen name="history_grid_thumbnail_radius">6dp</dimen>
+    <dimen name="history_filter_control_height">38dp</dimen>
+    <dimen name="history_filter_row_height">34dp</dimen>
+    <dimen name="history_filter_gap">4dp</dimen>
+    <dimen name="history_filter_text">12sp</dimen>
+    <dimen name="recent_spinner_text">13sp</dimen>
+    <dimen name="chat_text_action_size">36dp</dimen>
+    <dimen name="row_radius">8dp</dimen>
+    <dimen name="hairline">1dp</dimen>
+    <dimen name="text_body">15sp</dimen>
+    <dimen name="text_small">12sp</dimen>
+    <dimen name="text_title">20sp</dimen>
+</resources>

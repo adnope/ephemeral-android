@@ -1,0 +1,4 @@
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#E9ECEF" />
+    <corners android:radius="@dimen/history_grid_thumbnail_radius" />
+</shape>

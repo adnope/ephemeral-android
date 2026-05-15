@@ -1,0 +1,38 @@
+# Gradle / Android build output
+.gradle/
+build/
+**/build/
+
+# Local machine configuration
+local.properties
+
+# IDE state
+.idea/
+*.iml
+
+# Generated packages and signing artifacts
+*.apk
+*.ap_
+*.aab
+*.aar
+*.idsig
+*.keystore
+*.jks
+
+# Test / coverage output
+*.ec
+coverage/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Local agent/session files
+.codex
+.codex/
+API.md

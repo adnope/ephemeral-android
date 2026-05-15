@@ -1,0 +1,42 @@
+<resources>
+    <string-array name="recent_filter_labels">
+        <item>Any time</item>
+        <item>Last day</item>
+        <item>Last 7 days</item>
+        <item>Last 14 days</item>
+        <item>Last 30 days</item>
+        <item>Last 90 days</item>
+        <item>Last 6 months</item>
+        <item>Last year</item>
+    </string-array>
+    <string-array name="preview_language_labels">
+        <item>Auto detect</item>
+        <item>Plain text</item>
+        <item>Go</item>
+        <item>Python</item>
+        <item>JavaScript</item>
+        <item>TypeScript</item>
+        <item>JSX</item>
+        <item>TSX</item>
+        <item>JSON</item>
+        <item>Markdown</item>
+        <item>YAML</item>
+        <item>TOML</item>
+        <item>HTML</item>
+        <item>CSS</item>
+        <item>SCSS</item>
+        <item>XML</item>
+        <item>SQL</item>
+        <item>Shell</item>
+        <item>Makefile</item>
+        <item>Dockerfile</item>
+        <item>Rust</item>
+        <item>C</item>
+        <item>C++</item>
+        <item>Java</item>
+        <item>Kotlin</item>
+        <item>Ruby</item>
+        <item>PHP</item>
+        <item>Lua</item>
+    </string-array>
+</resources>

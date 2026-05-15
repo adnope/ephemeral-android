@@ -1,0 +1,49 @@
+<com.ephemeral.android.ui.history.SquareLinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="@dimen/space_xs"
+    android:background="@drawable/bg_bubble_file"
+    android:clipToPadding="true"
+    android:orientation="vertical"
+    android:padding="@dimen/space_xs">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_media_thumbnail_rounded"
+        android:clipToOutline="true">
+
+        <ImageView
+            android:id="@+id/image_thumb"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToOutline="true"
+            android:contentDescription="@string/view"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_video_placeholder" />
+
+        <ImageView
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_play" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/text_filename"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/color_text_primary"
+        android:textSize="@dimen/history_grid_filename_text"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/text_metadata"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/color_text_secondary"
+        android:textSize="@dimen/history_grid_metadata_text" />
+</com.ephemeral.android.ui.history.SquareLinearLayout>
