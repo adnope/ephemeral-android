@@ -51,7 +51,7 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final MediaType OCTET_STREAM = MediaType.get("application/octet-stream");
     private static final int BUFFER_SIZE = 64 * 1024;
-    private static final String DOWNLOADS_RELATIVE_PATH = Environment.DIRECTORY_DOWNLOADS + "/Ephemeral/";
+    private static final String DOWNLOADS_RELATIVE_PATH = Environment.DIRECTORY_DOWNLOADS;
 
     private final Context context;
     private final OkHttpClient client;

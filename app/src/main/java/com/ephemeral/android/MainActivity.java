@@ -43,6 +43,7 @@ import com.ephemeral.android.ui.login.LoginController;
 import com.ephemeral.android.ui.media.MediaViewerController;
 import com.ephemeral.android.ui.preview.TextPreviewController;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -99,7 +100,8 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         executors = application.getExecutors();
         sessionRepository = application.getSessionRepository();
         fileResolver = new FileResolver(getContentResolver());
-        imageLoader = new ImageLoader(getContentResolver(), executors, imageClient());
+        imageLoader = new ImageLoader(getContentResolver(), executors, imageClient(),
+                new File(getCacheDir(), "thumbnail-cache"));
         pendingShare = PendingShare.fromIntent(getIntent());
         boot();
     }
