@@ -36,3 +36,6 @@ Thumbs.db
 .codex
 .codex/
 API.md
+
+keystore.properties
+app/release-keystore.jks
