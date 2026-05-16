@@ -147,8 +147,9 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         holder.timestamp.setText(DateFormatter.chat(item.getCreatedAtEpochMillis()));
         int placeholder = item.getType() == ItemType.IMAGE
                 ? R.drawable.ic_image_placeholder : R.drawable.ic_video_placeholder;
-        imageLoader.loadContentRef(holder.thumbnail, preferredImageRef(item),
-                targetWidth(holder.thumbnail), targetHeight(holder.thumbnail), placeholder);
+        boolean animatedGif = isAnimatedGif(item);
+        imageLoader.loadContentRef(holder.thumbnail, animatedGif ? item.getContentRef() : preferredImageRef(item),
+                targetWidth(holder.thumbnail), targetHeight(holder.thumbnail), placeholder, animatedGif);
         holder.itemView.setOnClickListener(v -> callback.openMedia(item));
         holder.more.setOnClickListener(v -> showDeleteMenu(holder.more, item));
     }
@@ -205,6 +206,11 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private String preferredImageRef(Item item) {
         String thumb = item.getMetadata().getThumbRef();
         return thumb.isEmpty() ? item.getContentRef() : thumb;
+    }
+
+    private boolean isAnimatedGif(Item item) {
+        return item.getType() == ItemType.IMAGE && ImageLoader.isAnimatedGif(
+                item.getMetadata().getMime(), item.getFilename(), item.getContentRef());
     }
 
     private int targetWidth(ImageView imageView) {

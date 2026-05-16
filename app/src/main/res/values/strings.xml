@@ -13,12 +13,14 @@
     <string name="send">Send</string>
     <string name="attach">Attach</string>
     <string name="retry">Retry</string>
+    <string name="refresh">Refresh</string>
     <string name="delete">Delete</string>
     <string name="download">Download</string>
     <string name="view">View</string>
     <string name="copy">Copy</string>
     <string name="copied">Copied</string>
     <string name="close">Close</string>
+    <string name="close_viewer">Close viewer</string>
     <string name="search">Search</string>
     <string name="clear">Clear</string>
     <string name="no_messages">No messages</string>

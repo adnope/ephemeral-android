@@ -52,6 +52,15 @@
             android:layout_weight="1"
             android:background="@drawable/bg_filter_unselected"
             android:text="@string/history" />
+
+        <ImageButton
+            android:id="@+id/button_refresh"
+            android:layout_width="@dimen/touch_target"
+            android:layout_height="match_parent"
+            android:layout_marginStart="@dimen/space_sm"
+            android:background="@drawable/bg_button_secondary"
+            android:contentDescription="@string/refresh"
+            android:src="@drawable/ic_refresh" />
     </LinearLayout>
 
     <FrameLayout

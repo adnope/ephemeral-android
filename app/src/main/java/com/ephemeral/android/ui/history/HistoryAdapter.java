@@ -112,8 +112,9 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
         holder.metadata.setText(metadataLine(item));
         int placeholder = item.getType() == ItemType.IMAGE
                 ? R.drawable.ic_image_placeholder : R.drawable.ic_video_placeholder;
-        imageLoader.loadContentRef(holder.thumbnail, preferredImageRef(item),
-                targetWidth(holder.thumbnail), targetHeight(holder.thumbnail), placeholder);
+        boolean animatedGif = isAnimatedGif(item);
+        imageLoader.loadContentRef(holder.thumbnail, animatedGif ? item.getContentRef() : preferredImageRef(item),
+                targetWidth(holder.thumbnail), targetHeight(holder.thumbnail), placeholder, animatedGif);
         holder.itemView.setOnClickListener(v -> callback.openMedia(item));
         holder.itemView.setOnLongClickListener(v -> {
             callback.delete(item);
@@ -160,6 +161,11 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
     private String preferredImageRef(Item item) {
         String thumb = item.getMetadata().getThumbRef();
         return thumb.isEmpty() ? item.getContentRef() : thumb;
+    }
+
+    private boolean isAnimatedGif(Item item) {
+        return item.getType() == ItemType.IMAGE && ImageLoader.isAnimatedGif(
+                item.getMetadata().getMime(), item.getFilename(), item.getContentRef());
     }
 
     private int targetWidth(ImageView imageView) {

@@ -156,10 +156,11 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         releaseOverlay();
         screen = Screen.MEDIA;
         mediaViewerController = new MediaViewerController(LayoutInflater.from(this), this, imageLoader,
-                mediaItems, startIndex);
+                imageClient(), mediaItems, startIndex);
         activeEventConsumer = mediaViewerController;
-        container.removeAllViews();
-        container.addView(mediaViewerController.getView());
+        container.addView(mediaViewerController.getView(), new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
     }
 
     @Override
@@ -175,7 +176,7 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
 
     @Override
     public void closeOverlay() {
-        if (screen == Screen.PREVIEW) {
+        if (screen == Screen.MEDIA || screen == Screen.PREVIEW) {
             releaseOverlay();
             restoreAuthenticatedScreen();
             return;
@@ -399,6 +400,7 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
 
     private void releaseOverlay() {
         if (mediaViewerController != null) {
+            container.removeView(mediaViewerController.getView());
             mediaViewerController.release();
             mediaViewerController = null;
         }

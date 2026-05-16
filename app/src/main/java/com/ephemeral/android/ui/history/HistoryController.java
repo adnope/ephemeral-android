@@ -75,7 +75,7 @@ public final class HistoryController implements ItemEventConsumer {
         adapter = new HistoryAdapter(imageLoader, new HistoryAdapter.Callback() {
             @Override
             public void openMedia(Item item) {
-                openMedia(item);
+                HistoryController.this.openMedia(item);
             }
 
             @Override
@@ -110,6 +110,7 @@ public final class HistoryController implements ItemEventConsumer {
             }
         });
         view.findViewById(R.id.button_nav_chat).setOnClickListener(v -> host.showChat());
+        view.findViewById(R.id.button_refresh).setOnClickListener(v -> refreshFromBackend());
         view.findViewById(R.id.button_logout).setOnClickListener(v -> host.logout());
         view.findViewById(R.id.button_search).setOnClickListener(v -> applyFilters());
         view.findViewById(R.id.button_clear_search).setOnClickListener(v -> clearSearchPreservingType());
@@ -149,6 +150,12 @@ public final class HistoryController implements ItemEventConsumer {
         searchBody.setChecked(false);
         query = query.clearSearchPreservingType();
         loadFirst();
+    }
+
+    private void refreshFromBackend() {
+        if (!requestInFlight) {
+            loadFirst();
+        }
     }
 
     private void loadFirst() {

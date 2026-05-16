@@ -84,7 +84,7 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
 
             @Override
             public void openMedia(Item item) {
-                openMedia(item);
+                ChatController.this.openMedia(item);
             }
 
             @Override
@@ -110,6 +110,7 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
         });
         uploadController = new UploadController(view, api, config, host);
         view.findViewById(R.id.button_nav_history).setOnClickListener(v -> host.showHistory());
+        view.findViewById(R.id.button_refresh).setOnClickListener(v -> refreshFromBackend());
         view.findViewById(R.id.button_logout).setOnClickListener(v -> host.logout());
         view.findViewById(R.id.button_send).setOnClickListener(v -> sendComposer());
         view.findViewById(R.id.button_attach).setOnClickListener(v -> openFilePicker());
@@ -221,6 +222,12 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
     }
 
     private void refreshVisible() {
+        if (!requestInFlight) {
+            loadFirstPage();
+        }
+    }
+
+    private void refreshFromBackend() {
         if (!requestInFlight) {
             loadFirstPage();
         }
