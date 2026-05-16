@@ -35,7 +35,8 @@ Thumbs.db
 # Local agent/session files
 .codex
 .codex/
-API.md
+docs/API.md
 
 keystore.properties
 app/release-keystore.jks
+android-app-guidelines.md
