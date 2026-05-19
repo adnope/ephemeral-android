@@ -2,8 +2,10 @@ package com.ephemeral.android.ui.login;
 
 import android.graphics.Rect;
 import android.text.InputType;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
@@ -62,6 +64,7 @@ public final class LoginController {
         applyPasswordTypeface();
         toggle.setOnClickListener(v -> togglePassword(toggle));
         submit.setOnClickListener(v -> submit());
+        configureEnterActions();
         attachKeyboardScroll(serverUrl);
         attachKeyboardScroll(username);
         attachKeyboardScroll(password);
@@ -131,6 +134,45 @@ public final class LoginController {
 
     private void applyPasswordTypeface() {
         password.setTypeface(username.getTypeface());
+    }
+
+    private void configureEnterActions() {
+        serverUrl.setOnEditorActionListener((textView, actionId, event) -> {
+            if (isEnterAction(actionId, event, EditorInfo.IME_ACTION_NEXT)) {
+                focusField(username);
+                return true;
+            }
+            return false;
+        });
+        username.setOnEditorActionListener((textView, actionId, event) -> {
+            if (isEnterAction(actionId, event, EditorInfo.IME_ACTION_NEXT)) {
+                focusField(password);
+                return true;
+            }
+            return false;
+        });
+        password.setOnEditorActionListener((textView, actionId, event) -> {
+            if (isEnterAction(actionId, event, EditorInfo.IME_ACTION_DONE)) {
+                submit();
+                return true;
+            }
+            return false;
+        });
+    }
+
+    private boolean isEnterAction(int actionId, KeyEvent event, int expectedAction) {
+        if (actionId == expectedAction) {
+            return true;
+        }
+        return event != null
+                && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                && event.getAction() == KeyEvent.ACTION_DOWN;
+    }
+
+    private void focusField(EditText field) {
+        field.requestFocus();
+        field.setSelection(field.getText().length());
+        ensureFieldVisible(field);
     }
 
     private void setSubmitting(boolean submitting) {

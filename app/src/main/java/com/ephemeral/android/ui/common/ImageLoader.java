@@ -109,16 +109,24 @@ public final class ImageLoader {
             loadContentRef(target, thumbnailRef, targetWidth, targetHeight, placeholderRes, animateIfSupported);
             return;
         }
-        cancel(target);
-        target.setImageResource(placeholderRes);
         String key = "progressive|" + cacheKey(fullRef, targetWidth, targetHeight) + "|" + animateIfSupported;
+        if (key.equals(target.getTag()) && inFlight.containsKey(target)) {
+            return;
+        }
+        cancel(target);
         target.setTag(key);
+        Bitmap cached = cache.get(key);
+        if (cached != null) {
+            target.setImageBitmap(cached);
+            return;
+        }
+        Bitmap cachedThumbnail = cachedBitmap(thumbnailRef, targetWidth, targetHeight);
+        if (cachedThumbnail != null) {
+            target.setImageBitmap(cachedThumbnail);
+        } else {
+            target.setImageResource(placeholderRes);
+        }
         Future<?> future = executors.image().submit(() -> {
-            Bitmap cached = cache.get(key);
-            if (cached != null) {
-                deliver(target, key, cached);
-                return;
-            }
             if (isFullImageLocallyAvailable(fullRef)) {
                 if (animateIfSupported && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     Drawable drawable = decodeCachedAnimatedFullImage(fullRef, targetWidth, targetHeight);
@@ -311,16 +319,7 @@ public final class ImageLoader {
         }
         String thumbnailKey = cacheKey(thumbnailRef, targetWidth, targetHeight);
         String sourceKey = sessionThumbnailKey(thumbnailRef);
-        Bitmap thumbnail = cache.get(thumbnailKey);
-        if (thumbnail == null) {
-            thumbnail = sessionThumbnailCache.get(sourceKey);
-            if (thumbnail == null) {
-                thumbnail = sessionThumbnailCache.get(thumbnailKey);
-            }
-            if (thumbnail != null) {
-                cache.put(thumbnailKey, thumbnail);
-            }
-        }
+        Bitmap thumbnail = cachedBitmap(thumbnailRef, targetWidth, targetHeight);
         if (thumbnail == null) {
             thumbnail = readDiskCache(thumbnailKey, targetWidth, targetHeight);
             if (thumbnail != null) {
@@ -341,6 +340,25 @@ public final class ImageLoader {
         if (thumbnail != null) {
             deliver(target, key, thumbnail, false);
         }
+    }
+
+    private Bitmap cachedBitmap(String contentRef, int targetWidth, int targetHeight) {
+        if (contentRef == null || contentRef.isEmpty()) {
+            return null;
+        }
+        String key = cacheKey(contentRef, targetWidth, targetHeight);
+        String sourceKey = sessionThumbnailKey(contentRef);
+        Bitmap bitmap = cache.get(key);
+        if (bitmap == null) {
+            bitmap = sessionThumbnailCache.get(sourceKey);
+            if (bitmap == null) {
+                bitmap = sessionThumbnailCache.get(key);
+            }
+            if (bitmap != null) {
+                cache.put(key, bitmap);
+            }
+        }
+        return bitmap;
     }
 
     private void deliverDrawable(ImageView target, String key, Drawable drawable) {

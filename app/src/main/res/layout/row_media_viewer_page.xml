@@ -1,0 +1,29 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <com.ephemeral.android.ui.media.ZoomableImageView
+        android:id="@+id/image_media_page"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/view"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_image_placeholder" />
+
+    <VideoView
+        android:id="@+id/video_media_page"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/text_media_page_error"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:padding="@dimen/space_lg"
+        android:textColor="@android:color/white"
+        android:visibility="gone" />
+</FrameLayout>

@@ -38,6 +38,7 @@ import com.ephemeral.android.ui.common.FileResolver;
 import com.ephemeral.android.ui.common.ImageLoader;
 import com.ephemeral.android.ui.common.ItemEventConsumer;
 import com.ephemeral.android.ui.common.ScreenHost;
+import com.ephemeral.android.ui.common.SwipePagerLayout;
 import com.ephemeral.android.ui.history.HistoryController;
 import com.ephemeral.android.ui.login.LoginController;
 import com.ephemeral.android.ui.media.MediaViewerController;
@@ -50,6 +51,9 @@ import java.util.List;
 import okhttp3.OkHttpClient;
 
 public final class MainActivity extends ComponentActivity implements ScreenHost {
+    private static final int PAGE_CHAT = 0;
+    private static final int PAGE_HISTORY = 1;
+
     private enum Screen {
         LOADING,
         LOGIN,
@@ -68,6 +72,7 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     private RuntimeConfig runtimeConfig;
     private Screen screen = Screen.LOADING;
     private Screen lastAuthenticatedScreen = Screen.CHAT;
+    private SwipePagerLayout authenticatedPager;
     private ChatController chatController;
     private HistoryController historyController;
     private MediaViewerController mediaViewerController;
@@ -122,15 +127,7 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
             loadRuntimeConfig(this::showChat);
             return;
         }
-        releaseOverlay();
-        screen = Screen.CHAT;
-        lastAuthenticatedScreen = Screen.CHAT;
-        chatController = new ChatController(LayoutInflater.from(this), api, runtimeConfig,
-                this, fileResolver, imageLoader, () -> filePicker.launch(new String[]{"*/*"}));
-        activeEventConsumer = chatController;
-        container.removeAllViews();
-        container.addView(chatController.getView());
-        processPendingShare(chatController);
+        showAuthenticatedPage(PAGE_CHAT, true);
     }
 
     @Override
@@ -139,13 +136,7 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
             loadRuntimeConfig(this::showHistory);
             return;
         }
-        releaseOverlay();
-        screen = Screen.HISTORY;
-        lastAuthenticatedScreen = Screen.HISTORY;
-        historyController = new HistoryController(LayoutInflater.from(this), api, this, imageLoader);
-        activeEventConsumer = historyController;
-        container.removeAllViews();
-        container.addView(historyController.getView());
+        showAuthenticatedPage(PAGE_HISTORY, true);
     }
 
     @Override
@@ -326,6 +317,7 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
 
     private void showLogin(boolean setupMode, String initialError) {
         releaseOverlay();
+        releaseAuthenticatedPager();
         stopEvents();
         screen = Screen.LOGIN;
         LoginController loginController = new LoginController(LayoutInflater.from(this), api, sessionRepository,
@@ -412,14 +404,10 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     }
 
     private void restoreAuthenticatedScreen() {
-        if (lastAuthenticatedScreen == Screen.HISTORY && historyController != null) {
-            screen = Screen.HISTORY;
-            activeEventConsumer = historyController;
-            return;
-        }
-        if (chatController != null) {
-            screen = Screen.CHAT;
-            activeEventConsumer = chatController;
+        if (authenticatedPager != null) {
+            int page = lastAuthenticatedScreen == Screen.HISTORY ? PAGE_HISTORY : PAGE_CHAT;
+            authenticatedPager.setCurrentPage(page, false);
+            applyAuthenticatedPage(page);
             return;
         }
         if (lastAuthenticatedScreen == Screen.HISTORY) {
@@ -429,7 +417,58 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         }
     }
 
+    private void showAuthenticatedPage(int page, boolean animate) {
+        releaseOverlay();
+        ensureAuthenticatedPager();
+        if (authenticatedPager.getParent() != container) {
+            container.removeAllViews();
+            container.addView(authenticatedPager, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT));
+        }
+        applyAuthenticatedPage(page);
+        authenticatedPager.setCurrentPage(page, animate);
+        if (page == PAGE_CHAT && chatController != null) {
+            processPendingShare(chatController);
+        }
+    }
+
+    private void ensureAuthenticatedPager() {
+        if (authenticatedPager != null) {
+            return;
+        }
+        LayoutInflater inflater = LayoutInflater.from(this);
+        authenticatedPager = new SwipePagerLayout(this);
+        chatController = new ChatController(inflater, api, runtimeConfig,
+                this, fileResolver, imageLoader, () -> filePicker.launch(new String[]{"*/*"}));
+        historyController = new HistoryController(inflater, api, this, imageLoader);
+        authenticatedPager.addView(chatController.getView());
+        authenticatedPager.addView(historyController.getView());
+        authenticatedPager.setOnPageChangedListener(this::applyAuthenticatedPage);
+    }
+
+    private void applyAuthenticatedPage(int page) {
+        if (page == PAGE_HISTORY) {
+            screen = Screen.HISTORY;
+            lastAuthenticatedScreen = Screen.HISTORY;
+            activeEventConsumer = historyController;
+            return;
+        }
+        screen = Screen.CHAT;
+        lastAuthenticatedScreen = Screen.CHAT;
+        activeEventConsumer = chatController;
+    }
+
+    private void releaseAuthenticatedPager() {
+        authenticatedPager = null;
+        chatController = null;
+        historyController = null;
+        activeEventConsumer = null;
+    }
+
     private void showLoading(String message) {
+        releaseOverlay();
+        releaseAuthenticatedPager();
         screen = Screen.LOADING;
         TextView text = new TextView(this);
         text.setText(message);

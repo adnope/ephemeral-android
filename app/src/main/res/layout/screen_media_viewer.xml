@@ -75,29 +75,12 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <ImageView
-            android:id="@+id/image_media"
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/list_media_pages"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:contentDescription="@string/view"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_image_placeholder" />
-
-        <VideoView
-            android:id="@+id/video_media"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/text_media_error"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:padding="@dimen/space_lg"
-            android:textColor="@android:color/white"
-            android:visibility="gone" />
+            android:clipToPadding="false"
+            android:overScrollMode="never" />
     </FrameLayout>
 
     <TextView
