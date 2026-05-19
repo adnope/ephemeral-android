@@ -132,6 +132,7 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
         private final TextView error;
         private final MediaController videoControls;
         private int generation;
+        private boolean videoPrepared;
 
         MediaHolder(@NonNull View itemView, ImageLoader imageLoader, OkHttpClient httpClient) {
             super(itemView);
@@ -141,20 +142,21 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
             video = itemView.findViewById(R.id.video_media_page);
             error = itemView.findViewById(R.id.text_media_page_error);
             videoControls = new MediaController(itemView.getContext());
-            videoControls.setAnchorView(video);
+            videoControls.setAnchorView(itemView);
             video.setMediaController(videoControls);
         }
 
         void bind(Item item, boolean active) {
             generation++;
             stopVideo();
+            videoPrepared = false;
             error.setVisibility(View.GONE);
             image.setVisibility(View.VISIBLE);
             video.setVisibility(View.GONE);
             image.resetZoom();
             itemView.setOnClickListener(v -> {
                 if (active && item.getType() == ItemType.VIDEO) {
-                    videoControls.show();
+                    showVideoControlsIfReady();
                 }
             });
             if (item.getType() == ItemType.IMAGE) {
@@ -211,11 +213,12 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
         private void playVideo(Uri uri, Map<String, String> headers, int videoGeneration) {
             try {
                 image.setVisibility(View.VISIBLE);
-                video.setVisibility(View.INVISIBLE);
+                video.setVisibility(View.VISIBLE);
                 video.setOnPreparedListener(mp -> {
                     if (videoGeneration != generation) {
                         return;
                     }
+                    videoPrepared = true;
                     error.setVisibility(View.GONE);
                     image.setVisibility(View.GONE);
                     video.setVisibility(View.VISIBLE);
@@ -223,6 +226,7 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
                 });
                 video.setOnErrorListener((mp, what, extra) -> {
                     if (videoGeneration == generation) {
+                        videoPrepared = false;
                         showError("Video playback failed.");
                         video.setVisibility(View.GONE);
                         image.setVisibility(View.VISIBLE);
@@ -233,9 +237,21 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
                 video.requestFocus();
             } catch (RuntimeException e) {
                 stopVideo();
+                videoPrepared = false;
                 video.setVisibility(View.GONE);
                 image.setVisibility(View.VISIBLE);
                 showError("Video playback failed.");
+            }
+        }
+
+        private void showVideoControlsIfReady() {
+            if (!videoPrepared || video.getVisibility() != View.VISIBLE || !video.isShown()) {
+                return;
+            }
+            try {
+                videoControls.show();
+            } catch (RuntimeException e) {
+                // MediaController uses a PopupWindow and can throw if the VideoView window is not ready.
             }
         }
 
@@ -250,8 +266,15 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
             } catch (RuntimeException e) {
                 // Platform decoders can throw while a failed VideoView is being torn down.
             }
+            try {
+                videoControls.hide();
+            } catch (RuntimeException e) {
+                // Hiding the platform popup can also throw during teardown on some devices.
+            }
+            videoPrepared = false;
             video.setOnPreparedListener(null);
             video.setOnErrorListener(null);
+            video.setVisibility(View.GONE);
         }
 
         private int targetWidth() {

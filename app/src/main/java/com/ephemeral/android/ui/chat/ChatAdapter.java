@@ -28,14 +28,18 @@ import com.ephemeral.android.util.ByteFormatter;
 import com.ephemeral.android.util.DateFormatter;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     interface Callback {
         void retry(ChatEntry entry);
 
         void delete(Item item);
+
+        void select(Item item);
 
         void openMedia(Item item);
 
@@ -52,6 +56,7 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final ImageLoader imageLoader;
     private final Callback callback;
     private final List<ChatEntry> entries = new ArrayList<>();
+    private final Set<Long> selectedItemIds = new HashSet<>();
 
     ChatAdapter(ImageLoader imageLoader, Callback callback) {
         this.imageLoader = imageLoader;
@@ -62,6 +67,12 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     void submit(List<ChatEntry> nextEntries) {
         entries.clear();
         entries.addAll(nextEntries);
+        notifyDataSetChanged();
+    }
+
+    void setSelectedItemIds(Set<Long> nextSelectedItemIds) {
+        selectedItemIds.clear();
+        selectedItemIds.addAll(nextSelectedItemIds);
         notifyDataSetChanged();
     }
 
@@ -128,20 +139,29 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     private void bindText(TextHolder holder, ChatEntry entry) {
         holder.body.setText(entry.getText());
+        holder.body.setTextIsSelectable(false);
         Linkify.addLinks(holder.body, Linkify.WEB_URLS);
-        holder.body.setMovementMethod(LinkMovementMethod.getInstance());
+        holder.body.setMovementMethod(isSelectionMode() ? null : LinkMovementMethod.getInstance());
         holder.timestamp.setText(DateFormatter.chat(entry.getCreatedAtEpochMillis()));
-        holder.retry.setVisibility(entry.getSendStatus() == SendStatus.FAILED ? View.VISIBLE : View.GONE);
+        holder.retry.setVisibility(!isSelectionMode() && entry.getSendStatus() == SendStatus.FAILED
+                ? View.VISIBLE : View.GONE);
         holder.retry.setOnClickListener(v -> callback.retry(entry));
+        holder.copy.setVisibility(isSelectionMode() ? View.GONE : View.VISIBLE);
         holder.copy.setOnClickListener(v -> copyText(holder.copy.getContext(), entry.getText()));
         holder.status.setText(entry.isOptimistic() ? entry.getSendStatus().name().toLowerCase(Locale.US) : "");
-        holder.more.setVisibility(entry.isOptimistic() ? View.GONE : View.VISIBLE);
-        if (!entry.isOptimistic()) {
+        boolean selectable = !entry.isOptimistic();
+        if (selectable) {
+            bindSelection(holder.itemView, holder.body, entry.getItem());
+            holder.more.setVisibility(isSelectionMode() ? View.GONE : View.VISIBLE);
             holder.more.setOnClickListener(v -> showDeleteMenu(holder.more, entry.getItem()));
+        } else {
+            clearSelectionUi(holder.itemView, holder.body);
+            holder.more.setVisibility(View.GONE);
         }
     }
 
     private void bindMedia(MediaHolder holder, Item item) {
+        bindSelection(holder.itemView, null, item);
         holder.filename.setText(item.getFilename());
         holder.metadata.setText(metadataLine(item));
         holder.timestamp.setText(DateFormatter.chat(item.getCreatedAtEpochMillis()));
@@ -150,13 +170,25 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         boolean animatedGif = isAnimatedGif(item);
         imageLoader.loadContentRef(holder.thumbnail, animatedGif ? item.getContentRef() : preferredImageRef(item),
                 targetWidth(holder.thumbnail), targetHeight(holder.thumbnail), placeholder, animatedGif);
-        holder.itemView.setOnClickListener(v -> callback.openMedia(item));
+        holder.itemView.setOnClickListener(v -> {
+            if (isSelectionMode()) {
+                callback.select(item);
+            } else {
+                callback.openMedia(item);
+            }
+        });
+        holder.more.setVisibility(isSelectionMode() ? View.GONE : View.VISIBLE);
         holder.more.setOnClickListener(v -> showDeleteMenu(holder.more, item));
     }
 
     private void bindFile(FileHolder holder, Item item) {
+        bindSelection(holder.itemView, null, item);
         holder.filename.setText(item.getFilename());
         holder.metadata.setText(metadataLine(item) + " - " + DateFormatter.chat(item.getCreatedAtEpochMillis()));
+        boolean selectionMode = isSelectionMode();
+        holder.view.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
+        holder.download.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
+        holder.more.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
         holder.view.setEnabled(item.isPreviewable());
         holder.view.setOnClickListener(v -> {
             if (item.isPreviewable()) {
@@ -167,6 +199,46 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         });
         holder.download.setOnClickListener(v -> callback.download(item));
         holder.more.setOnClickListener(v -> showDeleteMenu(holder.more, item));
+        holder.itemView.setOnClickListener(v -> {
+            if (isSelectionMode()) {
+                callback.select(item);
+            }
+        });
+    }
+
+    private void bindSelection(View itemView, View childView, Item item) {
+        boolean selected = selectedItemIds.contains(item.getId());
+        itemView.setSelected(selected);
+        itemView.setForeground(selected ? itemView.getContext().getDrawable(R.drawable.bg_multi_select_foreground) : null);
+        itemView.setOnLongClickListener(v -> {
+            callback.select(item);
+            return true;
+        });
+        if (isSelectionMode()) {
+            itemView.setOnClickListener(v -> callback.select(item));
+        }
+        if (childView != null) {
+            childView.setOnLongClickListener(v -> {
+                callback.select(item);
+                return true;
+            });
+            childView.setOnClickListener(isSelectionMode() ? v -> callback.select(item) : null);
+        }
+    }
+
+    private void clearSelectionUi(View itemView, View childView) {
+        itemView.setSelected(false);
+        itemView.setForeground(null);
+        itemView.setOnLongClickListener(null);
+        itemView.setOnClickListener(null);
+        if (childView != null) {
+            childView.setOnLongClickListener(null);
+            childView.setOnClickListener(null);
+        }
+    }
+
+    private boolean isSelectionMode() {
+        return !selectedItemIds.isEmpty();
     }
 
     private void showDeleteMenu(View anchor, Item item) {

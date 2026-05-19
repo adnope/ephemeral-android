@@ -53,7 +53,8 @@
             android:layout_height="@dimen/history_grid_action_size"
             android:background="@android:color/transparent"
             android:contentDescription="@string/view"
-            android:src="@drawable/ic_eye" />
+            android:src="@drawable/ic_eye"
+            android:tint="@color/ic_tint" />
 
         <ImageButton
             android:id="@+id/button_download"

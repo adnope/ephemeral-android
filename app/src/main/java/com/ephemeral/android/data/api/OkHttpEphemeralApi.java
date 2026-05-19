@@ -31,12 +31,14 @@ import java.io.UnsupportedEncodingException;
 import java.net.SocketTimeoutException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import okhttp3.Call;
+import okhttp3.Cookie;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
@@ -115,15 +117,21 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
     public void logout(ApiCallback<Void> callback) {
         Request request;
         try {
-            request = jsonRequest("api/logout")
-                    .post(RequestBody.create(new byte[0], null))
-                    .build();
+            HttpUrl url = endpoint("api/logout");
+            Request.Builder builder = jsonRequest(url)
+                    .post(RequestBody.create(new byte[0], null));
+            String cookieHeader = cookieHeader(cookieStore.loadForRequest(url));
+            if (!cookieHeader.isEmpty()) {
+                builder.header("Cookie", cookieHeader);
+            }
+            request = builder.build();
         } catch (ApiError error) {
             clearLocalSession();
             postSuccess(callback, null);
             return;
         }
-        executeVoid(request, callback, true);
+        clearLocalSession();
+        executeVoid(request, callback, false);
     }
 
     @Override
@@ -394,6 +402,20 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
             return "video";
         }
         return "file";
+    }
+
+    private String cookieHeader(List<Cookie> cookies) {
+        if (cookies.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (Cookie cookie : cookies) {
+            if (builder.length() > 0) {
+                builder.append("; ");
+            }
+            builder.append(cookie.name()).append('=').append(cookie.value());
+        }
+        return builder.toString();
     }
 
     private Request.Builder jsonRequest(String path) throws ApiError {

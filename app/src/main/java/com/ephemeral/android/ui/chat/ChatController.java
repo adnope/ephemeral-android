@@ -1,5 +1,6 @@
 package com.ephemeral.android.ui.chat;
 
+import android.app.AlertDialog;
 import android.net.Uri;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -50,14 +51,18 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
     private final ProgressBar loading;
     private final TextView empty;
     private final EditText composer;
+    private final View composerPanel;
+    private final View selectionActions;
     private final ChatAdapter adapter;
     private final UploadController uploadController;
     private final LinearLayoutManager layoutManager;
     private final AtomicLong nextLocalId = new AtomicLong(-1);
     private final List<ChatEntry> entries = new ArrayList<>();
+    private final Set<Long> selectedItemIds = new HashSet<>();
     private long nextCursor;
     private boolean hasMore;
     private boolean requestInFlight;
+    private boolean refreshPending;
 
     public ChatController(LayoutInflater inflater, EphemeralApi api, RuntimeConfig config,
             ScreenHost host, FileResolver fileResolver, ImageLoader imageLoader, FilePicker filePicker) {
@@ -71,6 +76,8 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
         loading = view.findViewById(R.id.progress_chat);
         empty = view.findViewById(R.id.text_chat_empty);
         composer = view.findViewById(R.id.input_composer);
+        composerPanel = view.findViewById(R.id.panel_composer);
+        selectionActions = view.findViewById(R.id.panel_selection_actions);
         adapter = new ChatAdapter(imageLoader, new ChatAdapter.Callback() {
             @Override
             public void retry(ChatEntry entry) {
@@ -80,6 +87,11 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
             @Override
             public void delete(Item item) {
                 host.confirmDelete(item, () -> removeItem(item.getId()));
+            }
+
+            @Override
+            public void select(Item item) {
+                toggleSelection(item);
             }
 
             @Override
@@ -114,6 +126,8 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
         view.findViewById(R.id.button_logout).setOnClickListener(v -> host.logout());
         view.findViewById(R.id.button_send).setOnClickListener(v -> sendComposer());
         view.findViewById(R.id.button_attach).setOnClickListener(v -> openFilePicker());
+        view.findViewById(R.id.button_download_selected).setOnClickListener(v -> downloadSelected());
+        view.findViewById(R.id.button_delete_selected).setOnClickListener(v -> confirmDeleteSelected());
         composer.setOnKeyListener((v, keyCode, event) -> {
             if (keyCode == KeyEvent.KEYCODE_ENTER
                     && event.getAction() == KeyEvent.ACTION_DOWN
@@ -145,8 +159,35 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
         uploadController.enqueue(requests);
     }
 
+    public void refreshFromBackend() {
+        if (requestInFlight) {
+            refreshPending = true;
+            return;
+        }
+        refreshPending = false;
+        loadFirstPage();
+    }
+
+    public void removeItems(Set<Long> itemIds) {
+        if (itemIds.isEmpty()) {
+            return;
+        }
+        selectedItemIds.removeAll(itemIds);
+        for (int i = entries.size() - 1; i >= 0; i--) {
+            ChatEntry entry = entries.get(i);
+            if (!entry.isOptimistic() && itemIds.contains(entry.getItem().getId())) {
+                entries.remove(i);
+            }
+        }
+        render();
+    }
+
     @Override
     public boolean onBackPressed() {
+        if (isSelectionMode()) {
+            clearSelection();
+            return true;
+        }
         return uploadController.onBackPressed();
     }
 
@@ -167,6 +208,9 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
             public void onSuccess(Page<Item> page) {
                 requestInFlight = false;
                 loading.setVisibility(View.GONE);
+                if (startPendingRefresh()) {
+                    return;
+                }
                 List<ChatEntry> optimistic = optimisticEntries();
                 entries.clear();
                 appendNewestFirstItems(page.getItems());
@@ -181,6 +225,9 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
             public void onError(ApiError error) {
                 requestInFlight = false;
                 loading.setVisibility(View.GONE);
+                if (startPendingRefresh()) {
+                    return;
+                }
                 handleApiError(error);
             }
         });
@@ -198,6 +245,9 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
             @Override
             public void onSuccess(Page<Item> page) {
                 requestInFlight = false;
+                if (startPendingRefresh()) {
+                    return;
+                }
                 List<Item> currentItems = itemsOnly();
                 List<Item> merged = prependNewestFirstItems(currentItems, page.getItems());
                 List<ChatEntry> optimistic = optimisticEntries();
@@ -216,18 +266,24 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
             @Override
             public void onError(ApiError error) {
                 requestInFlight = false;
+                if (startPendingRefresh()) {
+                    return;
+                }
                 handleApiError(error);
             }
         });
     }
 
-    private void refreshVisible() {
-        if (!requestInFlight) {
-            loadFirstPage();
+    private boolean startPendingRefresh() {
+        if (!refreshPending) {
+            return false;
         }
+        refreshPending = false;
+        loadFirstPage();
+        return true;
     }
 
-    private void refreshFromBackend() {
+    private void refreshVisible() {
         if (!requestInFlight) {
             loadFirstPage();
         }
@@ -351,6 +407,7 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
     }
 
     private void removeItem(long itemId) {
+        selectedItemIds.remove(itemId);
         for (int i = entries.size() - 1; i >= 0; i--) {
             ChatEntry entry = entries.get(i);
             if (!entry.isOptimistic() && entry.getItem().getId() == itemId) {
@@ -358,6 +415,76 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
             }
         }
         render();
+    }
+
+    private void toggleSelection(Item item) {
+        if (selectedItemIds.contains(item.getId())) {
+            selectedItemIds.remove(item.getId());
+        } else {
+            selectedItemIds.add(item.getId());
+        }
+        adapter.setSelectedItemIds(selectedItemIds);
+        updateSelectionUi();
+    }
+
+    private boolean isSelectionMode() {
+        return !selectedItemIds.isEmpty();
+    }
+
+    private void clearSelection() {
+        selectedItemIds.clear();
+        adapter.setSelectedItemIds(selectedItemIds);
+        updateSelectionUi();
+    }
+
+    private void downloadSelected() {
+        List<Item> selectedItems = selectedItems();
+        clearSelection();
+        host.downloadItemsInBackground(selectedItems);
+    }
+
+    private void confirmDeleteSelected() {
+        List<Item> selectedItems = selectedItems();
+        if (selectedItems.isEmpty()) {
+            clearSelection();
+            return;
+        }
+        new AlertDialog.Builder(view.getContext())
+                .setTitle(R.string.confirm_delete_title)
+                .setMessage(view.getResources().getString(
+                        R.string.confirm_delete_selected_message, selectedItems.size()))
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.delete, (dialog, which) -> {
+                    clearSelection();
+                    host.deleteItemsOptimistically(selectedItems);
+                })
+                .show();
+    }
+
+    private List<Item> selectedItems() {
+        List<Item> selected = new ArrayList<>();
+        for (ChatEntry entry : entries) {
+            if (!entry.isOptimistic() && selectedItemIds.contains(entry.getItem().getId())) {
+                selected.add(entry.getItem());
+            }
+        }
+        return selected;
+    }
+
+    private void pruneSelectionToCurrentEntries() {
+        Set<Long> availableIds = new HashSet<>();
+        for (ChatEntry entry : entries) {
+            if (!entry.isOptimistic()) {
+                availableIds.add(entry.getItem().getId());
+            }
+        }
+        selectedItemIds.retainAll(availableIds);
+    }
+
+    private void updateSelectionUi() {
+        boolean selectionMode = isSelectionMode();
+        selectionActions.setVisibility(selectionMode ? View.VISIBLE : View.GONE);
+        composerPanel.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
     }
 
     private void removeDuplicateItems(long itemId) {
@@ -384,7 +511,10 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
     }
 
     private void render() {
+        pruneSelectionToCurrentEntries();
         adapter.submit(entries);
+        adapter.setSelectedItemIds(selectedItemIds);
+        updateSelectionUi();
         empty.setVisibility(entries.isEmpty() && !requestInFlight ? View.VISIBLE : View.GONE);
     }
 

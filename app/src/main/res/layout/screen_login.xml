@@ -87,7 +87,8 @@
                 android:layout_height="@dimen/touch_target"
                 android:background="@android:color/transparent"
                 android:contentDescription="@string/password"
-                android:src="@drawable/ic_eye" />
+                android:src="@drawable/ic_eye_off"
+                android:tint="@color/ic_tint" />
         </LinearLayout>
 
         <Button

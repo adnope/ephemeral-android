@@ -1,13 +1,16 @@
 package com.ephemeral.android.ui.media;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
+import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.ImageView;
 
 public final class ZoomableImageView extends ImageView {
@@ -15,14 +18,20 @@ public final class ZoomableImageView extends ImageView {
     private static final float MAX_SCALE = 4.5f;
     private static final float ZOOM_EPSILON = 0.01f;
     private static final float PINCH_SENSITIVITY = 1.7f;
+    private static final float DOUBLE_TAP_SCALE = 2f;
+    private static final long DOUBLE_TAP_ANIMATION_MS = 180L;
 
+    private final GestureDetector gestureDetector;
     private final ScaleGestureDetector scaleDetector;
+    private final DecelerateInterpolator zoomInterpolator = new DecelerateInterpolator();
     private final Matrix baseMatrix = new Matrix();
     private final Matrix gestureMatrix = new Matrix();
     private final Matrix drawMatrix = new Matrix();
+    private final Matrix targetMatrix = new Matrix();
     private final RectF drawableRect = new RectF();
     private final RectF displayRect = new RectF();
 
+    private ValueAnimator zoomAnimator;
     private Drawable lastDrawable;
     private float currentScale = MIN_SCALE;
     private float lastTouchX;
@@ -36,6 +45,7 @@ public final class ZoomableImageView extends ImageView {
 
     public ZoomableImageView(Context context, AttributeSet attrs) {
         super(context, attrs);
+        gestureDetector = new GestureDetector(context, new TapListener());
         scaleDetector = new ScaleGestureDetector(context, new ScaleListener());
         super.setScaleType(ScaleType.MATRIX);
     }
@@ -57,6 +67,7 @@ public final class ZoomableImageView extends ImageView {
     }
 
     public void resetZoom() {
+        cancelZoomAnimation();
         currentScale = MIN_SCALE;
         gestureMatrix.reset();
         updateImageMatrix();
@@ -89,6 +100,10 @@ public final class ZoomableImageView extends ImageView {
         if (!zoomEnabled) {
             return false;
         }
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            cancelZoomAnimation();
+        }
+        gestureDetector.onTouchEvent(event);
         scaleDetector.onTouchEvent(event);
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
@@ -128,6 +143,7 @@ public final class ZoomableImageView extends ImageView {
     }
 
     private void applyScale(float scaleFactor, float focusX, float focusY) {
+        cancelZoomAnimation();
         float accelerated = (float) Math.pow(scaleFactor, PINCH_SENSITIVITY);
         float nextScale = clamp(currentScale * accelerated, MIN_SCALE, MAX_SCALE);
         float appliedScale = nextScale / currentScale;
@@ -144,6 +160,66 @@ public final class ZoomableImageView extends ImageView {
         gestureMatrix.postTranslate(dx, dy);
         constrainTranslation();
         updateImageMatrix();
+    }
+
+    private void toggleDoubleTapZoom() {
+        if (isZoomedIn()) {
+            animateToScale(MIN_SCALE);
+            return;
+        }
+        animateToScale(DOUBLE_TAP_SCALE);
+        disallowParentIntercept();
+    }
+
+    private void animateToScale(float targetScale) {
+        cancelZoomAnimation();
+        float startScale = currentScale;
+        targetMatrix.reset();
+        if (targetScale > MIN_SCALE + ZOOM_EPSILON) {
+            targetMatrix.postScale(targetScale, targetScale, getWidth() / 2f, getHeight() / 2f);
+            constrainTranslation(targetMatrix);
+        }
+        float[] startValues = new float[9];
+        float[] endValues = new float[9];
+        float[] animatedValues = new float[9];
+        gestureMatrix.getValues(startValues);
+        targetMatrix.getValues(endValues);
+        zoomAnimator = ValueAnimator.ofFloat(0f, 1f);
+        zoomAnimator.setDuration(DOUBLE_TAP_ANIMATION_MS);
+        zoomAnimator.setInterpolator(zoomInterpolator);
+        zoomAnimator.addUpdateListener(animator -> {
+            float fraction = (float) animator.getAnimatedValue();
+            for (int i = 0; i < animatedValues.length; i++) {
+                animatedValues[i] = startValues[i] + (endValues[i] - startValues[i]) * fraction;
+            }
+            currentScale = startScale + (targetScale - startScale) * fraction;
+            gestureMatrix.setValues(animatedValues);
+            updateImageMatrix();
+        });
+        zoomAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+            private boolean cancelled;
+
+            @Override
+            public void onAnimationCancel(android.animation.Animator animation) {
+                cancelled = true;
+                zoomAnimator = null;
+            }
+
+            @Override
+            public void onAnimationEnd(android.animation.Animator animation) {
+                if (cancelled) {
+                    return;
+                }
+                zoomAnimator = null;
+                currentScale = targetScale;
+                gestureMatrix.set(targetMatrix);
+                updateImageMatrix();
+                if (!isZoomedIn()) {
+                    allowParentIntercept();
+                }
+            }
+        });
+        zoomAnimator.start();
     }
 
     private void configureBaseMatrix() {
@@ -172,25 +248,29 @@ public final class ZoomableImageView extends ImageView {
     }
 
     private void constrainTranslation() {
-        RectF rect = mappedDisplayRect();
+        constrainTranslation(gestureMatrix);
+    }
+
+    private void constrainTranslation(Matrix matrix) {
+        RectF rect = mappedDisplayRect(matrix);
         if (rect.isEmpty()) {
             return;
         }
         float deltaX = correctionDelta(rect.left, rect.right, getWidth());
         float deltaY = correctionDelta(rect.top, rect.bottom, getHeight());
         if (deltaX != 0f || deltaY != 0f) {
-            gestureMatrix.postTranslate(deltaX, deltaY);
+            matrix.postTranslate(deltaX, deltaY);
         }
     }
 
-    private RectF mappedDisplayRect() {
+    private RectF mappedDisplayRect(Matrix matrix) {
         Drawable drawable = getDrawable();
         if (drawable == null) {
             displayRect.setEmpty();
             return displayRect;
         }
         drawMatrix.set(baseMatrix);
-        drawMatrix.postConcat(gestureMatrix);
+        drawMatrix.postConcat(matrix);
         displayRect.set(0f, 0f, drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight());
         drawMatrix.mapRect(displayRect);
         return displayRect;
@@ -233,6 +313,26 @@ public final class ZoomableImageView extends ImageView {
     private void allowParentIntercept() {
         if (getParent() != null) {
             getParent().requestDisallowInterceptTouchEvent(false);
+        }
+    }
+
+    private void cancelZoomAnimation() {
+        if (zoomAnimator != null) {
+            zoomAnimator.cancel();
+            zoomAnimator = null;
+        }
+    }
+
+    private final class TapListener extends GestureDetector.SimpleOnGestureListener {
+        @Override
+        public boolean onDown(MotionEvent event) {
+            return true;
+        }
+
+        @Override
+        public boolean onDoubleTap(MotionEvent event) {
+            toggleDoubleTapZoom();
+            return true;
         }
     }
 

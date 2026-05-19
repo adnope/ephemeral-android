@@ -129,7 +129,7 @@ public final class LoginController {
         password.setInputType(type);
         applyPasswordTypeface();
         password.setSelection(password.getText().length());
-        toggle.setImageResource(passwordVisible ? R.drawable.ic_eye_off : R.drawable.ic_eye);
+        toggle.setImageResource(passwordVisible ? R.drawable.ic_eye : R.drawable.ic_eye_off);
     }
 
     private void applyPasswordTypeface() {

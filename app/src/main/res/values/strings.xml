@@ -32,6 +32,12 @@
     <string name="date_to">To</string>
     <string name="confirm_delete_title">Delete permanently?</string>
     <string name="confirm_delete_message">This item will be removed from the server.</string>
+    <string name="confirm_delete_selected_message">%1$d selected items will be removed from the server.</string>
+    <string name="deleted_items_successfully">Deleted %1$d item(s) successfully</string>
+    <string name="delete_items_failed">Failed to delete %1$d item(s)</string>
+    <string name="downloaded_files">Downloaded %1$d files</string>
+    <string name="download_files_failed">Failed to download %1$d file(s)</string>
+    <string name="no_downloadable_files_selected">No downloadable files selected.</string>
     <string name="cancel">Cancel</string>
     <string name="preview_loading">Loading preview...</string>
     <string name="preview_plaintext">Plain text</string>

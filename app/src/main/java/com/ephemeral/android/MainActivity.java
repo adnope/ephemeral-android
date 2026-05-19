@@ -27,10 +27,12 @@ import com.ephemeral.android.data.api.FileDownloadRequest;
 import com.ephemeral.android.data.api.FileDownloadResult;
 import com.ephemeral.android.data.api.ItemEvent;
 import com.ephemeral.android.data.api.ItemEventListener;
+import com.ephemeral.android.data.api.ItemEventType;
 import com.ephemeral.android.data.api.OkHttpEphemeralApi;
 import com.ephemeral.android.data.api.RuntimeConfig;
 import com.ephemeral.android.data.api.ServerState;
 import com.ephemeral.android.data.model.Item;
+import com.ephemeral.android.data.model.ItemType;
 import com.ephemeral.android.data.session.SessionRepository;
 import com.ephemeral.android.ui.chat.ChatController;
 import com.ephemeral.android.ui.common.BackHandler;
@@ -46,13 +48,16 @@ import com.ephemeral.android.ui.preview.TextPreviewController;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import okhttp3.OkHttpClient;
 
 public final class MainActivity extends ComponentActivity implements ScreenHost {
     private static final int PAGE_CHAT = 0;
     private static final int PAGE_HISTORY = 1;
+    private static final long DELETE_EVENT_TIMEOUT_MS = 10_000L;
 
     private enum Screen {
         LOADING,
@@ -79,6 +84,7 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     private TextPreviewController textPreviewController;
     private ItemEventConsumer activeEventConsumer;
     private EventSubscription eventSubscription;
+    private final List<PendingDeleteBatch> pendingDeleteBatches = new ArrayList<>();
     private PendingShare pendingShare = PendingShare.empty();
     private ActivityResultLauncher<String[]> filePicker;
 
@@ -201,6 +207,36 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     }
 
     @Override
+    public void deleteItemsOptimistically(List<Item> items) {
+        Set<Long> itemIds = itemIds(items);
+        if (itemIds.isEmpty()) {
+            return;
+        }
+        PendingDeleteBatch batch = new PendingDeleteBatch(itemIds);
+        pendingDeleteBatches.add(batch);
+        removeItemsFromAuthenticatedControllers(itemIds);
+        batch.timeoutRunnable = () -> failDeleteBatch(batch);
+        container.postDelayed(batch.timeoutRunnable, DELETE_EVENT_TIMEOUT_MS);
+        for (long itemId : itemIds) {
+            api.deleteItem(itemId, new ApiCallback<Void>() {
+                @Override
+                public void onSuccess(Void value) {
+                    // The item:deleted SSE is the confirmation source for optimistic UI state.
+                }
+
+                @Override
+                public void onError(ApiError error) {
+                    if (error.isAuthenticationFailure()) {
+                        handleApiError(error);
+                    } else {
+                        failDeleteBatch(batch);
+                    }
+                }
+            });
+        }
+    }
+
+    @Override
     public void downloadItem(Item item) {
         api.downloadFile(new FileDownloadRequest(item.getId(), item.getContentRef(), item.getFilename()),
                 new DownloadProgressListener() {
@@ -222,27 +258,55 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     }
 
     @Override
+    public void downloadItemsInBackground(List<Item> items) {
+        List<Item> downloadableItems = downloadableItems(items);
+        if (downloadableItems.isEmpty()) {
+            showMessage(getString(R.string.no_downloadable_files_selected));
+            return;
+        }
+        DownloadBatch batch = new DownloadBatch(downloadableItems.size());
+        for (Item item : downloadableItems) {
+            api.downloadFile(new FileDownloadRequest(item.getId(), item.getContentRef(), item.getFilename()),
+                    new DownloadProgressListener() {
+                        @Override
+                        public void onProgress(long downloadedBytes, long totalBytes) {
+                        }
+                    },
+                    new ApiCallback<FileDownloadResult>() {
+                        @Override
+                        public void onSuccess(FileDownloadResult value) {
+                            batch.recordSuccess();
+                        }
+
+                        @Override
+                        public void onError(ApiError error) {
+                            batch.recordFailure(error);
+                        }
+                    });
+        }
+    }
+
+    @Override
     public void logout() {
+        clearPendingDeleteBatches();
         stopEvents();
+        runtimeConfig = null;
+        sessionRepository.clearSession();
+        showLogin(false, "");
         api.logout(new ApiCallback<Void>() {
             @Override
             public void onSuccess(Void value) {
-                runtimeConfig = null;
-                sessionRepository.clearSession();
-                askServerState("");
             }
 
             @Override
             public void onError(ApiError error) {
-                runtimeConfig = null;
-                sessionRepository.clearSession();
-                askServerState(error.getMessage());
             }
         });
     }
 
     @Override
     public void onSessionExpired() {
+        clearPendingDeleteBatches();
         stopEvents();
         runtimeConfig = null;
         sessionRepository.clearSession();
@@ -318,6 +382,7 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     private void showLogin(boolean setupMode, String initialError) {
         releaseOverlay();
         releaseAuthenticatedPager();
+        clearPendingDeleteBatches();
         stopEvents();
         screen = Screen.LOGIN;
         LoginController loginController = new LoginController(LayoutInflater.from(this), api, sessionRepository,
@@ -354,6 +419,9 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         eventSubscription = api.observeItemEvents(new ItemEventListener() {
             @Override
             public void onEvent(ItemEvent event) {
+                if (event.getType() == ItemEventType.DELETED) {
+                    recordDeletedItemEvent(event.getItemId());
+                }
                 if (activeEventConsumer != null) {
                     activeEventConsumer.onItemEvent(event);
                 }
@@ -375,6 +443,91 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         }
     }
 
+    private Set<Long> itemIds(List<Item> items) {
+        Set<Long> itemIds = new HashSet<>();
+        for (Item item : items) {
+            if (item.getId() > 0) {
+                itemIds.add(item.getId());
+            }
+        }
+        return itemIds;
+    }
+
+    private List<Item> downloadableItems(List<Item> items) {
+        List<Item> downloadableItems = new ArrayList<>();
+        for (Item item : items) {
+            if (item.getType() != ItemType.TEXT && !item.getContentRef().isEmpty()) {
+                downloadableItems.add(item);
+            }
+        }
+        return downloadableItems;
+    }
+
+    private void removeItemsFromAuthenticatedControllers(Set<Long> itemIds) {
+        if (chatController != null) {
+            chatController.removeItems(itemIds);
+        }
+        if (historyController != null) {
+            historyController.removeItems(itemIds);
+        }
+    }
+
+    private void refreshAuthenticatedControllers() {
+        if (chatController != null) {
+            chatController.refreshFromBackend();
+        }
+        if (historyController != null) {
+            historyController.refreshFromBackend();
+        }
+    }
+
+    private void recordDeletedItemEvent(long itemId) {
+        if (pendingDeleteBatches.isEmpty()) {
+            return;
+        }
+        List<PendingDeleteBatch> completed = new ArrayList<>();
+        for (PendingDeleteBatch batch : pendingDeleteBatches) {
+            if (batch.recordDeleted(itemId) && batch.isComplete()) {
+                completed.add(batch);
+            }
+        }
+        for (PendingDeleteBatch batch : completed) {
+            completeDeleteBatch(batch);
+        }
+    }
+
+    private void completeDeleteBatch(PendingDeleteBatch batch) {
+        if (!pendingDeleteBatches.remove(batch)) {
+            return;
+        }
+        cancelDeleteTimeout(batch);
+        showMessage(getString(R.string.deleted_items_successfully, batch.size()));
+    }
+
+    private void failDeleteBatch(PendingDeleteBatch batch) {
+        if (!pendingDeleteBatches.remove(batch)) {
+            return;
+        }
+        cancelDeleteTimeout(batch);
+        showMessage(getString(R.string.delete_items_failed, batch.size()));
+        refreshAuthenticatedControllers();
+    }
+
+    private void cancelDeleteTimeout(PendingDeleteBatch batch) {
+        if (batch.timeoutRunnable != null && container != null) {
+            container.removeCallbacks(batch.timeoutRunnable);
+        }
+        batch.timeoutRunnable = null;
+    }
+
+    private void clearPendingDeleteBatches() {
+        List<PendingDeleteBatch> batches = new ArrayList<>(pendingDeleteBatches);
+        pendingDeleteBatches.clear();
+        for (PendingDeleteBatch batch : batches) {
+            cancelDeleteTimeout(batch);
+        }
+    }
+
     private void handleApiError(ApiError error) {
         if (error.isAuthenticationFailure()) {
             onSessionExpired();
@@ -386,6 +539,9 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     private BackHandler currentBackHandler() {
         if (screen == Screen.CHAT) {
             return chatController;
+        }
+        if (screen == Screen.HISTORY) {
+            return historyController;
         }
         return null;
     }
@@ -494,6 +650,70 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
             return ((OkHttpEphemeralApi) api).getClient();
         }
         return null;
+    }
+
+    private static final class PendingDeleteBatch {
+        final Set<Long> expectedItemIds;
+        final Set<Long> deletedEventItemIds = new HashSet<>();
+        Runnable timeoutRunnable;
+
+        PendingDeleteBatch(Set<Long> expectedItemIds) {
+            this.expectedItemIds = new HashSet<>(expectedItemIds);
+        }
+
+        boolean recordDeleted(long itemId) {
+            if (!expectedItemIds.contains(itemId)) {
+                return false;
+            }
+            deletedEventItemIds.add(itemId);
+            return true;
+        }
+
+        boolean isComplete() {
+            return deletedEventItemIds.containsAll(expectedItemIds);
+        }
+
+        int size() {
+            return expectedItemIds.size();
+        }
+    }
+
+    private final class DownloadBatch {
+        private final int total;
+        private int completed;
+        private int failed;
+        private boolean authenticationErrorHandled;
+
+        DownloadBatch(int total) {
+            this.total = total;
+        }
+
+        void recordSuccess() {
+            completed++;
+            showResultIfComplete();
+        }
+
+        void recordFailure(ApiError error) {
+            completed++;
+            failed++;
+            if (error.isAuthenticationFailure() && !authenticationErrorHandled) {
+                authenticationErrorHandled = true;
+                handleApiError(error);
+                return;
+            }
+            showResultIfComplete();
+        }
+
+        private void showResultIfComplete() {
+            if (completed < total) {
+                return;
+            }
+            if (failed == 0) {
+                showMessage(getString(R.string.downloaded_files, total));
+            } else {
+                showMessage(getString(R.string.download_files_failed, failed));
+            }
+        }
     }
 
     private static final class PendingShare {

@@ -19,7 +19,9 @@ import com.ephemeral.android.util.ByteFormatter;
 import com.ephemeral.android.util.DateFormatter;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     interface Callback {
@@ -31,7 +33,7 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
 
         void download(Item item);
 
-        void delete(Item item);
+        void select(Item item);
     }
 
     static final int TYPE_IMAGE = 1;
@@ -41,6 +43,7 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
     private final ImageLoader imageLoader;
     private final Callback callback;
     private final List<Item> items = new ArrayList<>();
+    private final Set<Long> selectedItemIds = new HashSet<>();
 
     HistoryAdapter(ImageLoader imageLoader, Callback callback) {
         this.imageLoader = imageLoader;
@@ -51,6 +54,12 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
     void submit(List<Item> nextItems) {
         items.clear();
         items.addAll(nextItems);
+        notifyDataSetChanged();
+    }
+
+    void setSelectedItemIds(Set<Long> nextSelectedItemIds) {
+        selectedItemIds.clear();
+        selectedItemIds.addAll(nextSelectedItemIds);
         notifyDataSetChanged();
     }
 
@@ -108,6 +117,7 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
     }
 
     private void bindMedia(MediaHolder holder, Item item) {
+        bindSelection(holder.itemView, item);
         holder.filename.setText(item.getFilename());
         holder.metadata.setText(metadataLine(item));
         int placeholder = item.getType() == ItemType.IMAGE
@@ -115,18 +125,24 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
         boolean animatedGif = isAnimatedGif(item);
         imageLoader.loadContentRef(holder.thumbnail, animatedGif ? item.getContentRef() : preferredImageRef(item),
                 targetWidth(holder.thumbnail), targetHeight(holder.thumbnail), placeholder, animatedGif);
-        holder.itemView.setOnClickListener(v -> callback.openMedia(item));
-        holder.itemView.setOnLongClickListener(v -> {
-            callback.delete(item);
-            return true;
+        holder.itemView.setOnClickListener(v -> {
+            if (isSelectionMode()) {
+                callback.select(item);
+            } else {
+                callback.openMedia(item);
+            }
         });
     }
 
     private void bindFile(FileHolder holder, Item item) {
+        bindSelection(holder.itemView, item);
         String title = item.getType() == ItemType.TEXT ? "Text message" : item.getFilename();
         holder.filename.setText(title);
         holder.metadata.setText(metadataLine(item) + " - " + DateFormatter.chat(item.getCreatedAtEpochMillis()));
+        boolean selectionMode = isSelectionMode();
         boolean previewable = item.getType() == ItemType.TEXT || item.isPreviewable();
+        holder.view.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
+        holder.download.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
         holder.view.setEnabled(true);
         holder.view.setOnClickListener(v -> {
             if (previewable) {
@@ -137,10 +153,25 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
         });
         holder.download.setEnabled(item.getType() != ItemType.TEXT);
         holder.download.setOnClickListener(v -> callback.download(item));
-        holder.itemView.setOnLongClickListener(v -> {
-            callback.delete(item);
+        holder.itemView.setOnClickListener(v -> {
+            if (isSelectionMode()) {
+                callback.select(item);
+            }
+        });
+    }
+
+    private void bindSelection(View itemView, Item item) {
+        boolean selected = selectedItemIds.contains(item.getId());
+        itemView.setSelected(selected);
+        itemView.setForeground(selected ? itemView.getContext().getDrawable(R.drawable.bg_multi_select_foreground) : null);
+        itemView.setOnLongClickListener(v -> {
+            callback.select(item);
             return true;
         });
+    }
+
+    private boolean isSelectionMode() {
+        return !selectedItemIds.isEmpty();
     }
 
     private String metadataLine(Item item) {
