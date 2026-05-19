@@ -3,66 +3,6 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:background="@color/color_surface"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="@dimen/space_lg"
-        android:paddingEnd="@dimen/space_sm">
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/app_name"
-            android:textColor="@color/color_text_primary"
-            android:textSize="@dimen/text_title"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/button_logout"
-            android:layout_width="wrap_content"
-            android:layout_height="32dp"
-            android:background="@drawable/bg_button_secondary"
-            android:text="@string/logout" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:background="@color/color_surface"
-        android:orientation="horizontal"
-        android:padding="@dimen/space_sm">
-
-        <Button
-            android:id="@+id/button_nav_chat"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="@drawable/bg_filter_selected"
-            android:text="@string/chat" />
-
-        <Button
-            android:id="@+id/button_nav_history"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/space_sm"
-            android:layout_weight="1"
-            android:background="@drawable/bg_filter_unselected"
-            android:text="@string/history" />
-
-        <ImageButton
-            android:id="@+id/button_refresh"
-            android:layout_width="@dimen/touch_target"
-            android:layout_height="match_parent"
-            android:layout_marginStart="@dimen/space_sm"
-            android:background="@drawable/bg_button_secondary"
-            android:contentDescription="@string/refresh"
-            android:src="@drawable/ic_refresh" />
-    </LinearLayout>
-
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"

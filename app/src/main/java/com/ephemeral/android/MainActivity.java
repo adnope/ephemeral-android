@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -77,7 +78,10 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     private RuntimeConfig runtimeConfig;
     private Screen screen = Screen.LOADING;
     private Screen lastAuthenticatedScreen = Screen.CHAT;
+    private View authenticatedShell;
     private SwipePagerLayout authenticatedPager;
+    private Button authenticatedChatTab;
+    private Button authenticatedHistoryTab;
     private ChatController chatController;
     private HistoryController historyController;
     private MediaViewerController mediaViewerController;
@@ -576,9 +580,9 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     private void showAuthenticatedPage(int page, boolean animate) {
         releaseOverlay();
         ensureAuthenticatedPager();
-        if (authenticatedPager.getParent() != container) {
+        if (authenticatedShell.getParent() != container) {
             container.removeAllViews();
-            container.addView(authenticatedPager, new FrameLayout.LayoutParams(
+            container.addView(authenticatedShell, new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.MATCH_PARENT));
         }
@@ -594,7 +598,14 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
             return;
         }
         LayoutInflater inflater = LayoutInflater.from(this);
-        authenticatedPager = new SwipePagerLayout(this);
+        authenticatedShell = inflater.inflate(R.layout.screen_authenticated, container, false);
+        authenticatedPager = authenticatedShell.findViewById(R.id.pager_authenticated);
+        authenticatedChatTab = authenticatedShell.findViewById(R.id.button_nav_chat);
+        authenticatedHistoryTab = authenticatedShell.findViewById(R.id.button_nav_history);
+        authenticatedShell.findViewById(R.id.button_logout).setOnClickListener(v -> logout());
+        authenticatedShell.findViewById(R.id.button_refresh).setOnClickListener(v -> refreshCurrentAuthenticatedPage());
+        authenticatedChatTab.setOnClickListener(v -> showChat());
+        authenticatedHistoryTab.setOnClickListener(v -> showHistory());
         chatController = new ChatController(inflater, api, runtimeConfig,
                 this, fileResolver, imageLoader, () -> filePicker.launch(new String[]{"*/*"}));
         historyController = new HistoryController(inflater, api, this, imageLoader);
@@ -608,15 +619,41 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
             screen = Screen.HISTORY;
             lastAuthenticatedScreen = Screen.HISTORY;
             activeEventConsumer = historyController;
+            updateAuthenticatedTabs(PAGE_HISTORY);
             return;
         }
         screen = Screen.CHAT;
         lastAuthenticatedScreen = Screen.CHAT;
         activeEventConsumer = chatController;
+        updateAuthenticatedTabs(PAGE_CHAT);
+    }
+
+    private void updateAuthenticatedTabs(int page) {
+        if (authenticatedChatTab == null || authenticatedHistoryTab == null) {
+            return;
+        }
+        boolean history = page == PAGE_HISTORY;
+        authenticatedChatTab.setBackgroundResource(history
+                ? R.drawable.bg_filter_unselected : R.drawable.bg_filter_selected);
+        authenticatedHistoryTab.setBackgroundResource(history
+                ? R.drawable.bg_filter_selected : R.drawable.bg_filter_unselected);
+    }
+
+    private void refreshCurrentAuthenticatedPage() {
+        if (screen == Screen.HISTORY && historyController != null) {
+            historyController.refreshFromBackend();
+            return;
+        }
+        if (chatController != null) {
+            chatController.refreshFromBackend();
+        }
     }
 
     private void releaseAuthenticatedPager() {
+        authenticatedShell = null;
         authenticatedPager = null;
+        authenticatedChatTab = null;
+        authenticatedHistoryTab = null;
         chatController = null;
         historyController = null;
         activeEventConsumer = null;

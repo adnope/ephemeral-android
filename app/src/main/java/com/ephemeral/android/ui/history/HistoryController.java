@@ -117,9 +117,6 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
                 }
             }
         });
-        view.findViewById(R.id.button_nav_chat).setOnClickListener(v -> host.showChat());
-        view.findViewById(R.id.button_refresh).setOnClickListener(v -> refreshFromBackend());
-        view.findViewById(R.id.button_logout).setOnClickListener(v -> host.logout());
         view.findViewById(R.id.button_search).setOnClickListener(v -> applyFilters());
         view.findViewById(R.id.button_clear_search).setOnClickListener(v -> clearSearchPreservingType());
         view.findViewById(R.id.button_download_selected).setOnClickListener(v -> downloadSelected());
