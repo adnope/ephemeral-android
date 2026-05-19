@@ -36,13 +36,20 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 
 public final class ImageLoader {
+    public interface VideoCacheCallback {
+        void onCachedVideo(Uri uri);
+
+        void onCacheUnavailable();
+    }
+
     private static final int DISK_CACHE_MAX_DIMENSION_PX = 512;
     private static final int BUFFER_SIZE = 64 * 1024;
-    private static final long DISK_CACHE_MAX_BYTES = 100L * 1024L * 1024L;
+    private static final long DISK_CACHE_MAX_BYTES = 512L * 1024L * 1024L;
     private static final int JPEG_THUMBNAIL_QUALITY = 85;
     private static final long ANIMATED_IMAGE_MAX_BYTES = 64L * 1024L * 1024L;
     private static final String THUMB_CACHE_SUFFIX = ".thumb";
     private static final String FULL_IMAGE_CACHE_SUFFIX = ".full";
+    private static final String VIDEO_CACHE_SUFFIX = ".video";
 
     private final ContentResolver contentResolver;
     private final AppExecutors executors;
@@ -120,14 +127,19 @@ public final class ImageLoader {
             target.setImageBitmap(cached);
             return;
         }
-        Bitmap cachedThumbnail = cachedBitmap(thumbnailRef, targetWidth, targetHeight);
-        if (cachedThumbnail != null) {
-            target.setImageBitmap(cachedThumbnail);
+        boolean fullImageLocallyAvailable = isFullImageLocallyAvailable(fullRef);
+        if (fullImageLocallyAvailable) {
+            target.setImageDrawable(null);
         } else {
-            target.setImageResource(placeholderRes);
+            Bitmap cachedThumbnail = cachedBitmap(thumbnailRef, targetWidth, targetHeight);
+            if (cachedThumbnail != null) {
+                target.setImageBitmap(cachedThumbnail);
+            } else {
+                target.setImageResource(placeholderRes);
+            }
         }
         Future<?> future = executors.image().submit(() -> {
-            if (isFullImageLocallyAvailable(fullRef)) {
+            if (fullImageLocallyAvailable) {
                 if (animateIfSupported && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     Drawable drawable = decodeCachedAnimatedFullImage(fullRef, targetWidth, targetHeight);
                     if (drawable != null) {
@@ -159,6 +171,56 @@ public final class ImageLoader {
             deliver(target, key, bitmap);
         });
         inFlight.put(target, future);
+    }
+
+    public Uri cachedVideoUri(String contentRef, long maxBytes) {
+        File file = cachedVideoFile(contentRef);
+        if (file == null || !file.isFile()) {
+            return null;
+        }
+        long length = file.length();
+        if (length <= 0 || length > maxBytes) {
+            file.delete();
+            return null;
+        }
+        file.setLastModified(System.currentTimeMillis());
+        return Uri.fromFile(file);
+    }
+
+    public Future<?> cacheVideoForPlayback(String contentRef, long declaredBytes, long maxBytes,
+            VideoCacheCallback callback) {
+        Uri cached = cachedVideoUri(contentRef, maxBytes);
+        if (cached != null) {
+            executors.main().execute(() -> callback.onCachedVideo(cached));
+            return null;
+        }
+        if (contentRef == null || contentRef.isEmpty() || httpClient == null
+                || declaredBytes <= 0 || declaredBytes > maxBytes) {
+            executors.main().execute(callback::onCacheUnavailable);
+            return null;
+        }
+        Uri uri = Uri.parse(contentRef);
+        String scheme = uri.getScheme();
+        if (!"http".equals(scheme) && !"https".equals(scheme)) {
+            executors.main().execute(callback::onCacheUnavailable);
+            return null;
+        }
+        return executors.network().submit(() -> {
+            File file = cachedVideoFile(contentRef);
+            Uri result = null;
+            if (file != null && downloadHttpToFile(contentRef, file, "video/*,*/*", maxBytes)) {
+                trimDiskCache();
+                result = cachedVideoUri(contentRef, maxBytes);
+            }
+            Uri finalResult = result;
+            executors.main().execute(() -> {
+                if (finalResult != null) {
+                    callback.onCachedVideo(finalResult);
+                } else {
+                    callback.onCacheUnavailable();
+                }
+            });
+        });
     }
 
     public void loadContentUri(ImageView target, Uri uri, int targetWidth, int targetHeight, int placeholderRes) {
@@ -251,6 +313,12 @@ public final class ImageLoader {
         cancel(target);
         target.setTag(null);
         target.setImageResource(placeholderRes);
+    }
+
+    public void clear(ImageView target) {
+        cancel(target);
+        target.setTag(null);
+        target.setImageDrawable(null);
     }
 
     public void cancel(ImageView target) {
@@ -696,6 +764,13 @@ public final class ImageLoader {
         return new File(diskCacheDirectory, sha256("full|" + contentRef) + FULL_IMAGE_CACHE_SUFFIX);
     }
 
+    private File cachedVideoFile(String contentRef) {
+        if (diskCacheDirectory == null || contentRef == null || contentRef.isEmpty()) {
+            return null;
+        }
+        return new File(diskCacheDirectory, sha256("video|" + contentRef) + VIDEO_CACHE_SUFFIX);
+    }
+
     private boolean isFullImageLocallyAvailable(String contentRef) {
         if (contentRef == null || contentRef.isEmpty()) {
             return false;
@@ -731,7 +806,8 @@ public final class ImageLoader {
         }
         File[] files = diskCacheDirectory.listFiles(file -> file.isFile()
                 && (file.getName().endsWith(THUMB_CACHE_SUFFIX)
-                || file.getName().endsWith(FULL_IMAGE_CACHE_SUFFIX)));
+                || file.getName().endsWith(FULL_IMAGE_CACHE_SUFFIX)
+                || file.getName().endsWith(VIDEO_CACHE_SUFFIX)));
         if (files == null || files.length == 0) {
             return;
         }
@@ -755,6 +831,10 @@ public final class ImageLoader {
     }
 
     private boolean downloadHttpToFile(String url, File target, String acceptHeader) {
+        return downloadHttpToFile(url, target, acceptHeader, Long.MAX_VALUE);
+    }
+
+    private boolean downloadHttpToFile(String url, File target, String acceptHeader, long maxBytes) {
         File directory = target.getParentFile();
         if (directory == null || (!directory.exists() && !directory.mkdirs())) {
             return false;
@@ -774,10 +854,18 @@ public final class ImageLoader {
             return false;
         }
         try (Response response = httpClient.newCall(request).execute()) {
-            if (!response.isSuccessful() || response.body() == null) {
+            ResponseBody body = response.body();
+            if (!response.isSuccessful() || body == null) {
+                partial.delete();
                 return false;
             }
-            try (InputStream input = response.body().byteStream();
+            long contentLength = body.contentLength();
+            if (contentLength > maxBytes) {
+                partial.delete();
+                return false;
+            }
+            long written = 0;
+            try (InputStream input = body.byteStream();
                     OutputStream output = new FileOutputStream(partial)) {
                 byte[] buffer = new byte[BUFFER_SIZE];
                 while (true) {
@@ -788,6 +876,11 @@ public final class ImageLoader {
                     int read = input.read(buffer);
                     if (read == -1) {
                         break;
+                    }
+                    written += read;
+                    if (written > maxBytes) {
+                        partial.delete();
+                        return false;
                     }
                     output.write(buffer, 0, read);
                 }

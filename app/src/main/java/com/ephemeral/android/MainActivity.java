@@ -32,6 +32,7 @@ import com.ephemeral.android.data.api.ItemEventType;
 import com.ephemeral.android.data.api.OkHttpEphemeralApi;
 import com.ephemeral.android.data.api.RuntimeConfig;
 import com.ephemeral.android.data.api.ServerState;
+import com.ephemeral.android.data.cache.CachedEphemeralApi;
 import com.ephemeral.android.data.model.Item;
 import com.ephemeral.android.data.model.ItemType;
 import com.ephemeral.android.data.session.SessionRepository;
@@ -683,6 +684,9 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     }
 
     private OkHttpClient imageClient() {
+        if (api instanceof CachedEphemeralApi) {
+            return ((CachedEphemeralApi) api).getOkHttpClient();
+        }
         if (api instanceof OkHttpEphemeralApi) {
             return ((OkHttpEphemeralApi) api).getClient();
         }

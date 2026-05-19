@@ -23,12 +23,15 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Future;
 
 import okhttp3.Cookie;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 
 final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.MediaHolder> {
+    private static final long VIDEO_CACHE_MAX_BYTES = 64L * 1024L * 1024L;
+
     private final ImageLoader imageLoader;
     private final OkHttpClient httpClient;
     private final List<Item> items = new ArrayList<>();
@@ -131,6 +134,7 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
         private final VideoView video;
         private final TextView error;
         private final MediaController videoControls;
+        private Future<?> videoCacheFuture;
         private int generation;
         private boolean videoPrepared;
 
@@ -168,7 +172,12 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
                 return;
             }
             image.setZoomEnabled(false);
-            loadVideoPoster(item);
+            boolean cachedVideo = imageLoader.cachedVideoUri(item.getContentRef(), VIDEO_CACHE_MAX_BYTES) != null;
+            if (active && cachedVideo) {
+                imageLoader.clear(image);
+            } else {
+                loadVideoPoster(item);
+            }
             if (active) {
                 loadVideo(item, generation);
             }
@@ -205,6 +214,32 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
             }
             if (!"http".equals(scheme) && !"https".equals(scheme)) {
                 showError("Video playback failed.");
+                return;
+            }
+            Uri cached = imageLoader.cachedVideoUri(item.getContentRef(), VIDEO_CACHE_MAX_BYTES);
+            if (cached != null) {
+                playVideo(cached, Collections.emptyMap(), videoGeneration);
+                return;
+            }
+            if (shouldCacheVideo(item)) {
+                videoCacheFuture = imageLoader.cacheVideoForPlayback(item.getContentRef(),
+                        item.getFilesizeBytes(), VIDEO_CACHE_MAX_BYTES, new ImageLoader.VideoCacheCallback() {
+                            @Override
+                            public void onCachedVideo(Uri uri) {
+                                videoCacheFuture = null;
+                                if (videoGeneration == generation) {
+                                    playVideo(uri, Collections.emptyMap(), videoGeneration);
+                                }
+                            }
+
+                            @Override
+                            public void onCacheUnavailable() {
+                                videoCacheFuture = null;
+                                if (videoGeneration == generation) {
+                                    playVideo(direct, streamingHeaders(item.getContentRef()), videoGeneration);
+                                }
+                            }
+                        });
                 return;
             }
             playVideo(direct, streamingHeaders(item.getContentRef()), videoGeneration);
@@ -261,6 +296,10 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
         }
 
         private void stopVideo() {
+            if (videoCacheFuture != null) {
+                videoCacheFuture.cancel(true);
+                videoCacheFuture = null;
+            }
             try {
                 video.stopPlayback();
             } catch (RuntimeException e) {
@@ -293,6 +332,11 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
 
         private int imageTargetHeight() {
             return targetHeight() * 2;
+        }
+
+        private boolean shouldCacheVideo(Item item) {
+            long filesizeBytes = item.getFilesizeBytes();
+            return filesizeBytes > 0 && filesizeBytes <= VIDEO_CACHE_MAX_BYTES;
         }
 
         private Uri parsePlayableUri(String contentRef) {
