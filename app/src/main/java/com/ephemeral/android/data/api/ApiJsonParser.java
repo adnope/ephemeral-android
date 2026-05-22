@@ -104,7 +104,13 @@ public final class ApiJsonParser {
                 getString(metadataObject, "duration", ""),
                 getString(metadataObject, "mime", ""),
                 resolveRef(baseUrl, getString(metadataObject, "thumbRef",
-                        getString(metadataObject, "thumbnailUrl", getString(metadataObject, "thumb", "")))));
+                        getString(metadataObject, "thumbnailUrl", getString(metadataObject, "thumb", "")))),
+                resolveRef(baseUrl, getString(metadataObject, "playbackRef",
+                        getString(metadataObject, "playbackUrl", getString(metadataObject, "playback", "")))),
+                getString(metadataObject, "playbackMime", ""),
+                resolveRef(baseUrl, getString(metadataObject, "hlsRef",
+                        getString(metadataObject, "hlsUrl", getString(metadataObject, "hls", "")))),
+                getBoolean(metadataObject, "processing", false));
         return new Item(
                 getLong(object, "id", 0),
                 type,

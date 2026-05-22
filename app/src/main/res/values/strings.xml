@@ -41,5 +41,7 @@
     <string name="cancel">Cancel</string>
     <string name="preview_loading">Loading preview...</string>
     <string name="preview_plaintext">Plain text</string>
+    <string name="video_processing">Video is still processing.</string>
+    <string name="video_playback_failed">Video playback failed.</string>
     <string name="release_api_missing">Release build requires the mobile API endpoint contract before use.</string>
 </resources>

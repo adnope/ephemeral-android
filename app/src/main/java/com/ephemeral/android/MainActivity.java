@@ -157,7 +157,7 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         }
         releaseOverlay();
         screen = Screen.MEDIA;
-        mediaViewerController = new MediaViewerController(LayoutInflater.from(this), this, imageLoader,
+        mediaViewerController = new MediaViewerController(LayoutInflater.from(this), this, api, imageLoader,
                 imageClient(), mediaItems, startIndex);
         activeEventConsumer = mediaViewerController;
         container.addView(mediaViewerController.getView(), new FrameLayout.LayoutParams(

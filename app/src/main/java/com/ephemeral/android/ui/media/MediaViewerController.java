@@ -11,10 +11,14 @@ import androidx.recyclerview.widget.PagerSnapHelper;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.ephemeral.android.R;
+import com.ephemeral.android.data.api.ApiCallback;
+import com.ephemeral.android.data.api.ApiError;
+import com.ephemeral.android.data.api.EphemeralApi;
 import com.ephemeral.android.data.api.ItemEvent;
 import com.ephemeral.android.data.api.ItemEventType;
 import com.ephemeral.android.data.model.Item;
 import com.ephemeral.android.data.model.ItemMetadata;
+import com.ephemeral.android.data.model.Page;
 import com.ephemeral.android.ui.common.ImageLoader;
 import com.ephemeral.android.ui.common.ItemEventConsumer;
 import com.ephemeral.android.ui.common.ScreenHost;
@@ -29,6 +33,7 @@ import okhttp3.OkHttpClient;
 public final class MediaViewerController implements ItemEventConsumer {
     private final View view;
     private final ScreenHost host;
+    private final EphemeralApi api;
     private final List<Item> mediaItems;
     private final RecyclerView mediaPager;
     private final LinearLayoutManager layoutManager;
@@ -40,9 +45,10 @@ public final class MediaViewerController implements ItemEventConsumer {
     private final ImageButton next;
     private int index;
 
-    public MediaViewerController(LayoutInflater inflater, ScreenHost host, ImageLoader imageLoader,
+    public MediaViewerController(LayoutInflater inflater, ScreenHost host, EphemeralApi api, ImageLoader imageLoader,
             OkHttpClient httpClient, List<Item> mediaItems, int startIndex) {
         this.host = host;
+        this.api = api;
         this.mediaItems = new ArrayList<>(mediaItems);
         index = clampIndex(startIndex);
         view = inflater.inflate(R.layout.screen_media_viewer, null, false);
@@ -108,6 +114,8 @@ public final class MediaViewerController implements ItemEventConsumer {
     public void onItemEvent(ItemEvent event) {
         if (event.getType() == ItemEventType.DELETED) {
             removeMediaItem(event.getItemId());
+        } else if (event.getType() == ItemEventType.UPDATED) {
+            refreshMediaItem(event.getItemId());
         }
     }
 
@@ -169,6 +177,42 @@ public final class MediaViewerController implements ItemEventConsumer {
         adapter.submit(mediaItems, index);
         updateChrome();
         mediaPager.post(() -> mediaPager.scrollToPosition(index));
+    }
+
+    private void refreshMediaItem(long itemId) {
+        if (indexOfItem(itemId) < 0) {
+            return;
+        }
+        api.loadChatPage(0, new ApiCallback<Page<Item>>() {
+            @Override
+            public void onSuccess(Page<Item> value) {
+                for (Item item : value.getItems()) {
+                    if (item.getId() == itemId && item.isMedia()) {
+                        replaceMediaItem(item);
+                        return;
+                    }
+                }
+            }
+
+            @Override
+            public void onError(ApiError error) {
+                // Media refresh is best effort; normal list refresh still picks up the backend state.
+            }
+        });
+    }
+
+    private void replaceMediaItem(Item updatedItem) {
+        int itemIndex = indexOfItem(updatedItem.getId());
+        if (itemIndex < 0) {
+            return;
+        }
+        mediaItems.set(itemIndex, updatedItem);
+        adapter.submit(mediaItems, index);
+        updateChrome();
+        mediaPager.post(() -> {
+            mediaPager.scrollToPosition(index);
+            adapter.setActivePosition(index);
+        });
     }
 
     private int indexOfItem(long itemId) {

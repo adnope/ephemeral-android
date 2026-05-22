@@ -49,20 +49,28 @@ public final class ApiJsonParserTest {
     @Test
     public void parsesBackendMobileItemShape() {
         String json = "{"
-                + "\"items\":[{\"id\":51,\"type\":\"image\",\"text\":\"\","
-                + "\"filename\":\"photo.jpg\",\"filesizeBytes\":2048,"
-                + "\"contentUrl\":\"/api/files/photo.jpg\","
-                + "\"downloadUrl\":\"/api/files/photo.jpg\","
+                + "\"items\":[{\"id\":51,\"type\":\"video\",\"text\":\"\","
+                + "\"filename\":\"clip.mov\",\"filesizeBytes\":2048,"
+                + "\"contentUrl\":\"/api/files/clip.mov\","
+                + "\"downloadUrl\":\"/api/files/clip.mov\","
                 + "\"createdAtEpochMillis\":123,"
                 + "\"metadata\":{\"width\":640,\"height\":480,"
-                + "\"mime\":\"image/jpeg\",\"thumbnailUrl\":\"/api/files/thumbs/photo.jpg\"}}],"
+                + "\"mime\":\"video/quicktime\",\"thumbnailUrl\":\"/api/files/thumbs/clip.jpg\","
+                + "\"playbackUrl\":\"/api/files/playback/clip.mp4\","
+                + "\"playbackMime\":\"video/mp4\","
+                + "\"hlsUrl\":\"/api/files/hls/clip/index.m3u8\","
+                + "\"processing\":true}}],"
                 + "\"nextCursor\":51,\"hasMore\":true}";
 
         Page<Item> page = ApiJsonParser.parseItemPage(json, "https://example.test");
         Item item = page.getItems().get(0);
 
-        assertEquals("https://example.test/api/files/photo.jpg", item.getContentRef());
-        assertEquals("https://example.test/api/files/thumbs/photo.jpg", item.getMetadata().getThumbRef());
+        assertEquals("https://example.test/api/files/clip.mov", item.getContentRef());
+        assertEquals("https://example.test/api/files/thumbs/clip.jpg", item.getMetadata().getThumbRef());
+        assertEquals("https://example.test/api/files/playback/clip.mp4", item.getMetadata().getPlaybackRef());
+        assertEquals("video/mp4", item.getMetadata().getPlaybackMime());
+        assertEquals("https://example.test/api/files/hls/clip/index.m3u8", item.getMetadata().getHlsRef());
+        assertTrue(item.getMetadata().isProcessing());
     }
 
     @Test

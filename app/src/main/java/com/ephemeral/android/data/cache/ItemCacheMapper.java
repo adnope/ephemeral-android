@@ -21,6 +21,10 @@ final class ItemCacheMapper {
         entity.duration = metadata.getDuration();
         entity.mime = metadata.getMime();
         entity.thumbRef = metadata.getThumbRef();
+        entity.playbackRef = metadata.getPlaybackRef();
+        entity.playbackMime = metadata.getPlaybackMime();
+        entity.hlsRef = metadata.getHlsRef();
+        entity.processing = metadata.isProcessing();
         entity.createdAtEpochMillis = item.getCreatedAtEpochMillis();
         entity.previewable = item.isPreviewable();
         entity.cacheBytes = estimateCacheBytes(entity);
@@ -36,7 +40,8 @@ final class ItemCacheMapper {
                 clean(entity.filename),
                 entity.filesizeBytes,
                 new ItemMetadata(entity.width, entity.height, clean(entity.duration), clean(entity.mime),
-                        clean(entity.thumbRef)),
+                        clean(entity.thumbRef), clean(entity.playbackRef), clean(entity.playbackMime),
+                        clean(entity.hlsRef), entity.processing),
                 entity.createdAtEpochMillis,
                 entity.previewable);
     }
@@ -48,7 +53,10 @@ final class ItemCacheMapper {
                 + bytes(entity.filename)
                 + bytes(entity.duration)
                 + bytes(entity.mime)
-                + bytes(entity.thumbRef);
+                + bytes(entity.thumbRef)
+                + bytes(entity.playbackRef)
+                + bytes(entity.playbackMime)
+                + bytes(entity.hlsRef);
     }
 
     private static long bytes(String value) {

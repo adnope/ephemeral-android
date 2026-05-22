@@ -1,32 +1,38 @@
 package com.ephemeral.android.ui.media;
 
+import android.content.Context;
 import android.net.Uri;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.MediaController;
 import android.widget.TextView;
-import android.widget.VideoView;
 
 import androidx.annotation.NonNull;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.MimeTypes;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.Player;
+import androidx.media3.datasource.DataSource;
+import androidx.media3.datasource.DefaultDataSource;
+import androidx.media3.datasource.okhttp.OkHttpDataSource;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.ui.PlayerView;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.ephemeral.android.R;
 import com.ephemeral.android.data.model.Item;
+import com.ephemeral.android.data.model.ItemMetadata;
 import com.ephemeral.android.data.model.ItemType;
 import com.ephemeral.android.ui.common.ImageLoader;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Future;
 
-import okhttp3.Cookie;
-import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 
 final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.MediaHolder> {
@@ -131,10 +137,10 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
         private final ImageLoader imageLoader;
         private final OkHttpClient httpClient;
         private final ZoomableImageView image;
-        private final VideoView video;
+        private final PlayerView playerView;
         private final TextView error;
-        private final MediaController videoControls;
         private Future<?> videoCacheFuture;
+        private ExoPlayer player;
         private int generation;
         private boolean videoPrepared;
 
@@ -143,11 +149,10 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
             this.imageLoader = imageLoader;
             this.httpClient = httpClient;
             image = itemView.findViewById(R.id.image_media_page);
-            video = itemView.findViewById(R.id.video_media_page);
+            playerView = itemView.findViewById(R.id.player_media_page);
             error = itemView.findViewById(R.id.text_media_page_error);
-            videoControls = new MediaController(itemView.getContext());
-            videoControls.setAnchorView(itemView);
-            video.setMediaController(videoControls);
+            playerView.setUseController(true);
+            playerView.setControllerAutoShow(true);
         }
 
         void bind(Item item, boolean active) {
@@ -156,7 +161,7 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
             videoPrepared = false;
             error.setVisibility(View.GONE);
             image.setVisibility(View.VISIBLE);
-            video.setVisibility(View.GONE);
+            playerView.setVisibility(View.GONE);
             image.resetZoom();
             itemView.setOnClickListener(v -> {
                 if (active && item.getType() == ItemType.VIDEO) {
@@ -172,14 +177,23 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
                 return;
             }
             image.setZoomEnabled(false);
-            boolean cachedVideo = imageLoader.cachedVideoUri(item.getContentRef(), VIDEO_CACHE_MAX_BYTES) != null;
+            if (item.getMetadata().isProcessing()) {
+                loadVideoPoster(item);
+                if (active) {
+                    showError(itemView.getContext().getString(R.string.video_processing));
+                }
+                return;
+            }
+            PlaybackSource source = playbackSource(item);
+            boolean cachedVideo = source.cacheable
+                    && imageLoader.cachedVideoUri(source.ref, VIDEO_CACHE_MAX_BYTES) != null;
             if (active && cachedVideo) {
                 imageLoader.clear(image);
             } else {
                 loadVideoPoster(item);
             }
             if (active) {
-                loadVideo(item, generation);
+                loadVideo(item, source, generation);
             }
         }
 
@@ -200,35 +214,37 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
                     R.drawable.ic_video_placeholder);
         }
 
-        private void loadVideo(Item item, int videoGeneration) {
+        private void loadVideo(Item item, PlaybackSource source, int videoGeneration) {
             error.setVisibility(View.GONE);
-            Uri direct = parsePlayableUri(item.getContentRef());
+            Uri direct = parsePlayableUri(source.ref);
             if (direct == null) {
-                showError("Video playback failed.");
+                showPlaybackFailed();
                 return;
             }
             String scheme = direct.getScheme();
             if ("content".equals(scheme) || "file".equals(scheme)) {
-                playVideo(direct, Collections.emptyMap(), videoGeneration);
+                playVideo(direct, source.mimeType, videoGeneration);
                 return;
             }
             if (!"http".equals(scheme) && !"https".equals(scheme)) {
-                showError("Video playback failed.");
+                showPlaybackFailed();
                 return;
             }
-            Uri cached = imageLoader.cachedVideoUri(item.getContentRef(), VIDEO_CACHE_MAX_BYTES);
+            Uri cached = source.cacheable
+                    ? imageLoader.cachedVideoUri(source.ref, VIDEO_CACHE_MAX_BYTES)
+                    : null;
             if (cached != null) {
-                playVideo(cached, Collections.emptyMap(), videoGeneration);
+                playVideo(cached, source.mimeType, videoGeneration);
                 return;
             }
-            if (shouldCacheVideo(item)) {
-                videoCacheFuture = imageLoader.cacheVideoForPlayback(item.getContentRef(),
+            if (shouldCacheVideo(item, source)) {
+                videoCacheFuture = imageLoader.cacheVideoForPlayback(source.ref,
                         item.getFilesizeBytes(), VIDEO_CACHE_MAX_BYTES, new ImageLoader.VideoCacheCallback() {
                             @Override
                             public void onCachedVideo(Uri uri) {
                                 videoCacheFuture = null;
                                 if (videoGeneration == generation) {
-                                    playVideo(uri, Collections.emptyMap(), videoGeneration);
+                                    playVideo(uri, source.mimeType, videoGeneration);
                                 }
                             }
 
@@ -236,58 +252,81 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
                             public void onCacheUnavailable() {
                                 videoCacheFuture = null;
                                 if (videoGeneration == generation) {
-                                    playVideo(direct, streamingHeaders(item.getContentRef()), videoGeneration);
+                                    playVideo(direct, source.mimeType, videoGeneration);
                                 }
                             }
                         });
                 return;
             }
-            playVideo(direct, streamingHeaders(item.getContentRef()), videoGeneration);
+            playVideo(direct, source.mimeType, videoGeneration);
         }
 
-        private void playVideo(Uri uri, Map<String, String> headers, int videoGeneration) {
+        private void playVideo(Uri uri, String mimeType, int videoGeneration) {
             try {
                 image.setVisibility(View.VISIBLE);
-                video.setVisibility(View.VISIBLE);
-                video.setOnPreparedListener(mp -> {
-                    if (videoGeneration != generation) {
-                        return;
+                playerView.setVisibility(View.VISIBLE);
+                Context context = itemView.getContext();
+                player = new ExoPlayer.Builder(context)
+                        .setMediaSourceFactory(new DefaultMediaSourceFactory(dataSourceFactory(context)))
+                        .build();
+                playerView.setPlayer(player);
+                player.addListener(new Player.Listener() {
+                    @Override
+                    public void onPlaybackStateChanged(int playbackState) {
+                        if (videoGeneration != generation || playbackState != Player.STATE_READY) {
+                            return;
+                        }
+                        videoPrepared = true;
+                        error.setVisibility(View.GONE);
+                        image.setVisibility(View.GONE);
+                        playerView.setVisibility(View.VISIBLE);
                     }
-                    videoPrepared = true;
-                    error.setVisibility(View.GONE);
-                    image.setVisibility(View.GONE);
-                    video.setVisibility(View.VISIBLE);
-                    video.start();
-                });
-                video.setOnErrorListener((mp, what, extra) -> {
-                    if (videoGeneration == generation) {
-                        videoPrepared = false;
-                        showError("Video playback failed.");
-                        video.setVisibility(View.GONE);
-                        image.setVisibility(View.VISIBLE);
+
+                    @Override
+                    public void onPlayerError(@NonNull PlaybackException error) {
+                        if (videoGeneration == generation) {
+                            showPlaybackFailed();
+                        }
                     }
-                    return true;
                 });
-                video.setVideoURI(uri, headers);
-                video.requestFocus();
+                player.setMediaItem(mediaItem(uri, mimeType));
+                player.setPlayWhenReady(true);
+                player.prepare();
             } catch (RuntimeException e) {
-                stopVideo();
-                videoPrepared = false;
-                video.setVisibility(View.GONE);
-                image.setVisibility(View.VISIBLE);
-                showError("Video playback failed.");
+                showPlaybackFailed();
             }
+        }
+
+        private MediaItem mediaItem(Uri uri, String mimeType) {
+            MediaItem.Builder builder = new MediaItem.Builder().setUri(uri);
+            if (mimeType != null && !mimeType.isEmpty()) {
+                builder.setMimeType(mimeType);
+            }
+            return builder.build();
+        }
+
+        private DataSource.Factory dataSourceFactory(Context context) {
+            if (httpClient == null) {
+                return new DefaultDataSource.Factory(context);
+            }
+            OkHttpDataSource.Factory okHttpFactory = new OkHttpDataSource.Factory(httpClient)
+                    .setDefaultRequestProperties(Collections.singletonMap(
+                            "Accept", "video/*,application/vnd.apple.mpegurl,*/*"));
+            return new DefaultDataSource.Factory(context, okHttpFactory);
         }
 
         private void showVideoControlsIfReady() {
-            if (!videoPrepared || video.getVisibility() != View.VISIBLE || !video.isShown()) {
+            if (!videoPrepared || playerView.getVisibility() != View.VISIBLE || !playerView.isShown()) {
                 return;
             }
-            try {
-                videoControls.show();
-            } catch (RuntimeException e) {
-                // MediaController uses a PopupWindow and can throw if the VideoView window is not ready.
-            }
+            playerView.showController();
+        }
+
+        private void showPlaybackFailed() {
+            stopVideo();
+            showError(itemView.getContext().getString(R.string.video_playback_failed));
+            playerView.setVisibility(View.GONE);
+            image.setVisibility(View.VISIBLE);
         }
 
         private void showError(String message) {
@@ -300,20 +339,13 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
                 videoCacheFuture.cancel(true);
                 videoCacheFuture = null;
             }
-            try {
-                video.stopPlayback();
-            } catch (RuntimeException e) {
-                // Platform decoders can throw while a failed VideoView is being torn down.
-            }
-            try {
-                videoControls.hide();
-            } catch (RuntimeException e) {
-                // Hiding the platform popup can also throw during teardown on some devices.
+            if (player != null) {
+                playerView.setPlayer(null);
+                player.release();
+                player = null;
             }
             videoPrepared = false;
-            video.setOnPreparedListener(null);
-            video.setOnErrorListener(null);
-            video.setVisibility(View.GONE);
+            playerView.setVisibility(View.GONE);
         }
 
         private int targetWidth() {
@@ -334,9 +366,22 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
             return targetHeight() * 2;
         }
 
-        private boolean shouldCacheVideo(Item item) {
+        private boolean shouldCacheVideo(Item item, PlaybackSource source) {
             long filesizeBytes = item.getFilesizeBytes();
-            return filesizeBytes > 0 && filesizeBytes <= VIDEO_CACHE_MAX_BYTES;
+            return source.cacheable && filesizeBytes > 0 && filesizeBytes <= VIDEO_CACHE_MAX_BYTES;
+        }
+
+        private PlaybackSource playbackSource(Item item) {
+            ItemMetadata metadata = item.getMetadata();
+            if (!metadata.getHlsRef().isEmpty()) {
+                return new PlaybackSource(metadata.getHlsRef(), MimeTypes.APPLICATION_M3U8, false);
+            }
+            if (!metadata.getPlaybackRef().isEmpty()) {
+                String mime = metadata.getPlaybackMime().isEmpty()
+                        ? MimeTypes.VIDEO_MP4 : metadata.getPlaybackMime();
+                return new PlaybackSource(metadata.getPlaybackRef(), mime, true);
+            }
+            return new PlaybackSource(item.getContentRef(), metadata.getMime(), true);
         }
 
         private Uri parsePlayableUri(String contentRef) {
@@ -352,31 +397,16 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
             return null;
         }
 
-        private Map<String, String> streamingHeaders(String contentRef) {
-            Map<String, String> headers = new HashMap<>();
-            headers.put("Accept", "video/*,*/*");
-            if (httpClient == null) {
-                return headers;
+        private static final class PlaybackSource {
+            final String ref;
+            final String mimeType;
+            final boolean cacheable;
+
+            PlaybackSource(String ref, String mimeType, boolean cacheable) {
+                this.ref = ref == null ? "" : ref;
+                this.mimeType = mimeType == null ? "" : mimeType;
+                this.cacheable = cacheable;
             }
-            HttpUrl url;
-            try {
-                url = HttpUrl.get(contentRef);
-            } catch (IllegalArgumentException e) {
-                return headers;
-            }
-            List<Cookie> cookies = httpClient.cookieJar().loadForRequest(url);
-            if (cookies.isEmpty()) {
-                return headers;
-            }
-            StringBuilder cookieHeader = new StringBuilder();
-            for (Cookie cookie : cookies) {
-                if (cookieHeader.length() > 0) {
-                    cookieHeader.append("; ");
-                }
-                cookieHeader.append(cookie.name()).append('=').append(cookie.value());
-            }
-            headers.put("Cookie", cookieHeader.toString());
-            return headers;
         }
     }
 }
