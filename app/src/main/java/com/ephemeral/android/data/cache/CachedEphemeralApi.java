@@ -203,6 +203,12 @@ public final class CachedEphemeralApi implements EphemeralApi {
     }
 
     @Override
+    public Cancellable downloadZip(String ids, DownloadProgressListener progress,
+            ApiCallback<FileDownloadResult> callback) {
+        return remote.downloadZip(ids, progress, callback);
+    }
+
+    @Override
     public EventSubscription observeItemEvents(ItemEventListener listener) {
         return remote.observeItemEvents(new ItemEventListener() {
             @Override

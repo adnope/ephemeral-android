@@ -33,5 +33,8 @@ public interface EphemeralApi {
     Cancellable downloadFile(FileDownloadRequest request, DownloadProgressListener progress,
             ApiCallback<FileDownloadResult> callback);
 
+    Cancellable downloadZip(String ids, DownloadProgressListener progress,
+            ApiCallback<FileDownloadResult> callback);
+
     EventSubscription observeItemEvents(ItemEventListener listener);
 }

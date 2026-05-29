@@ -247,6 +247,14 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
     }
 
     @Override
+    public Cancellable downloadZip(String ids, DownloadProgressListener progress,
+            ApiCallback<FileDownloadResult> callback) {
+        CallCancellable cancellable = new CallCancellable();
+        executors.network().execute(() -> downloadZipInternal(ids, progress, callback, cancellable));
+        return cancellable;
+    }
+
+    @Override
     public EventSubscription observeItemEvents(ItemEventListener listener) {
         try {
             SseSubscription subscription = new SseSubscription(endpoint("api/events"), listener);
@@ -313,6 +321,43 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
                             response.code(), null);
                 }
                 String filename = safeFilename(downloadRequest.getFilename());
+                FileDownloadResult result = saveDownload(body, response, filename, progress, cancellable);
+                postSuccess(callback, result);
+            }
+        } catch (ApiError error) {
+            deletePartial(partial);
+            postError(callback, error);
+        } catch (IOException error) {
+            deletePartial(partial);
+            postError(callback, errorFromIOException(error, cancellable));
+        }
+    }
+
+    private void downloadZipInternal(String ids, DownloadProgressListener progress,
+            ApiCallback<FileDownloadResult> callback, CallCancellable cancellable) {
+        File partial = null;
+        try {
+            HttpUrl url = endpointBuilder("api/items/download-zip")
+                    .addQueryParameter("ids", ids)
+                    .build();
+            Request httpRequest = new Request.Builder()
+                    .url(url)
+                    .header("Accept", "*/*")
+                    .get()
+                    .build();
+            Call call = client.newCall(httpRequest);
+            cancellable.setCall(call);
+            try (Response response = call.execute()) {
+                if (!response.isSuccessful()) {
+                    throw errorFromResponse(response, readBody(response));
+                }
+                ResponseBody body = response.body();
+                if (body == null) {
+                    throw new ApiError(ApiErrorCategory.SERVER_ERROR, "Download response was empty.",
+                            response.code(), null);
+                }
+                String filename = filenameFromResponse(response, "ephemeral_download.zip");
+                filename = safeFilename(filename);
                 FileDownloadResult result = saveDownload(body, response, filename, progress, cancellable);
                 postSuccess(callback, result);
             }

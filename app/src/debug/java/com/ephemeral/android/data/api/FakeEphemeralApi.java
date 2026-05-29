@@ -205,6 +205,26 @@ public final class FakeEphemeralApi implements EphemeralApi {
     }
 
     @Override
+    public Cancellable downloadZip(String ids, DownloadProgressListener progress,
+            ApiCallback<FileDownloadResult> callback) {
+        UploadCancellation cancellation = new UploadCancellation();
+        executors.network().execute(() -> {
+            long total = 1024L * 512L;
+            for (int i = 1; i <= 4; i++) {
+                if (cancellation.isCanceled()) {
+                    postError(callback, new ApiError(ApiErrorCategory.CANCELED, "Download canceled."));
+                    return;
+                }
+                long current = (total * i) / 4;
+                executors.main().execute(() -> progress.onProgress(current, total));
+                sleep(120);
+            }
+            executors.main().execute(() -> callback.onSuccess(new FileDownloadResult(Uri.EMPTY, "ephemeral_download.zip")));
+        });
+        return cancellation;
+    }
+
+    @Override
     public EventSubscription observeItemEvents(ItemEventListener listener) {
         listeners.add(listener);
         return () -> listeners.remove(listener);

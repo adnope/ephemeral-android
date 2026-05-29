@@ -83,6 +83,11 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     private SwipePagerLayout authenticatedPager;
     private Button authenticatedChatTab;
     private Button authenticatedHistoryTab;
+    private View toolbarNormal;
+    private View toolbarSelection;
+    private TextView textSelectionCount;
+    private TextView textSelectionSize;
+    private SelectionClient currentSelectionClient;
     private ChatController chatController;
     private HistoryController historyController;
     private MediaViewerController mediaViewerController;
@@ -269,6 +274,7 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
             showMessage(getString(R.string.no_downloadable_files_selected));
             return;
         }
+        showMessage("Download started...");
         DownloadBatch batch = new DownloadBatch(downloadableItems.size());
         for (Item item : downloadableItems) {
             api.downloadFile(new FileDownloadRequest(item.getId(), item.getContentRef(), item.getFilename()),
@@ -321,6 +327,65 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     @Override
     public void showMessage(String message) {
         Toast.makeText(this, message == null ? "Request failed." : message, Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onSelectionChanged(SelectionClient client) {
+        currentSelectionClient = client;
+        if (client == null || !client.isSelectionMode()) {
+            if (toolbarSelection != null) {
+                toolbarSelection.setVisibility(View.GONE);
+            }
+            if (toolbarNormal != null) {
+                toolbarNormal.setVisibility(View.VISIBLE);
+            }
+        } else {
+            if (toolbarNormal != null) {
+                // Wait! Tweak 1 says: "The toolbar in multiselect mode should be at the bottom."
+                // This means the normal toolbar at the top stays visible! We don't hide it anymore!
+                // Ah!!! That is an extremely important point!
+                // "1. The toolbar in multiselect mode should be at the bottom."
+                // In a normal app, the top toolbar stays as the normal top bar, and the selection actions are shown at the bottom.
+                // So toolbarNormal should remain visible (View.VISIBLE).
+                toolbarNormal.setVisibility(View.VISIBLE);
+            }
+            if (toolbarSelection != null) {
+                toolbarSelection.setVisibility(View.VISIBLE);
+            }
+            List<Item> selected = client.getSelectedItems();
+            long totalSizeBytes = 0;
+            for (Item item : selected) {
+                long size = item.getFilesizeBytes();
+                if (size > 0) {
+                    totalSizeBytes += size;
+                } else if (item.getType() == ItemType.TEXT && item.getContentRef() != null) {
+                    totalSizeBytes += item.getContentRef().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+                }
+            }
+            if (textSelectionCount != null) {
+                textSelectionCount.setText(String.valueOf(selected.size()));
+            }
+            if (textSelectionSize != null) {
+                textSelectionSize.setText(com.ephemeral.android.util.ByteFormatter.format(totalSizeBytes));
+            }
+        }
+    }
+
+    private void confirmDeleteSelected(List<Item> selectedItems) {
+        if (selectedItems.isEmpty()) {
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.confirm_delete_title)
+                .setMessage(getString(R.string.confirm_delete_selected_message, selectedItems.size()))
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.delete, (dialog, which) -> {
+                    if (currentSelectionClient != null) {
+                        currentSelectionClient.clearSelection();
+                    }
+                    deleteItemsOptimistically(selectedItems);
+                })
+                .show();
     }
 
     private void handleBackPressed() {
@@ -456,16 +521,6 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
             }
         }
         return itemIds;
-    }
-
-    private List<Item> downloadableItems(List<Item> items) {
-        List<Item> downloadableItems = new ArrayList<>();
-        for (Item item : items) {
-            if (item.getType() != ItemType.TEXT && !item.getContentRef().isEmpty()) {
-                downloadableItems.add(item);
-            }
-        }
-        return downloadableItems;
     }
 
     private void removeItemsFromAuthenticatedControllers(Set<Long> itemIds) {
@@ -607,6 +662,36 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         authenticatedShell.findViewById(R.id.button_refresh).setOnClickListener(v -> refreshCurrentAuthenticatedPage());
         authenticatedChatTab.setOnClickListener(v -> showChat());
         authenticatedHistoryTab.setOnClickListener(v -> showHistory());
+
+        toolbarNormal = authenticatedShell.findViewById(R.id.toolbar_normal);
+        toolbarSelection = authenticatedShell.findViewById(R.id.toolbar_selection);
+        textSelectionCount = authenticatedShell.findViewById(R.id.text_selection_count);
+        textSelectionSize = authenticatedShell.findViewById(R.id.text_selection_size);
+
+        authenticatedShell.findViewById(R.id.button_selection_cancel).setOnClickListener(v -> {
+            if (currentSelectionClient != null) {
+                currentSelectionClient.clearSelection();
+            }
+        });
+        authenticatedShell.findViewById(R.id.button_selection_all).setOnClickListener(v -> {
+            if (currentSelectionClient != null) {
+                currentSelectionClient.toggleSelectAll();
+            }
+        });
+        authenticatedShell.findViewById(R.id.button_selection_download).setOnClickListener(v -> {
+            if (currentSelectionClient != null) {
+                List<Item> selected = currentSelectionClient.getSelectedItems();
+                currentSelectionClient.clearSelection();
+                downloadItemsInBackground(selected);
+            }
+        });
+        authenticatedShell.findViewById(R.id.button_selection_delete).setOnClickListener(v -> {
+            if (currentSelectionClient != null) {
+                List<Item> selected = currentSelectionClient.getSelectedItems();
+                confirmDeleteSelected(selected);
+            }
+        });
+
         chatController = new ChatController(inflater, api, runtimeConfig,
                 this, fileResolver, imageLoader, () -> filePicker.launch(new String[]{"*/*"}));
         historyController = new HistoryController(inflater, api, this, imageLoader);
@@ -617,11 +702,17 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
 
     private void applyAuthenticatedPage(int page) {
         if (page == PAGE_HISTORY) {
+            if (chatController != null) {
+                chatController.clearSelection();
+            }
             screen = Screen.HISTORY;
             lastAuthenticatedScreen = Screen.HISTORY;
             activeEventConsumer = historyController;
             updateAuthenticatedTabs(PAGE_HISTORY);
             return;
+        }
+        if (historyController != null) {
+            historyController.clearSelection();
         }
         screen = Screen.CHAT;
         lastAuthenticatedScreen = Screen.CHAT;
@@ -717,6 +808,16 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         int size() {
             return expectedItemIds.size();
         }
+    }
+
+    private List<Item> downloadableItems(List<Item> items) {
+        List<Item> downloadableItems = new ArrayList<>();
+        for (Item item : items) {
+            if (item.getType() != ItemType.TEXT && !item.getContentRef().isEmpty()) {
+                downloadableItems.add(item);
+            }
+        }
+        return downloadableItems;
     }
 
     private final class DownloadBatch {

@@ -28,4 +28,13 @@ public interface ScreenHost {
     void onSessionExpired();
 
     void showMessage(String message);
+
+    interface SelectionClient {
+        void toggleSelectAll();
+        void clearSelection();
+        List<Item> getSelectedItems();
+        boolean isSelectionMode();
+    }
+
+    void onSelectionChanged(SelectionClient client);
 }

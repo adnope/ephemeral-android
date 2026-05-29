@@ -43,7 +43,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-public final class HistoryController implements ItemEventConsumer, BackHandler {
+public final class HistoryController implements ItemEventConsumer, BackHandler, ScreenHost.SelectionClient {
     private final View view;
     private final EphemeralApi api;
     private final ScreenHost host;
@@ -56,7 +56,6 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
     private final RecyclerView list;
     private final ProgressBar loading;
     private final TextView empty;
-    private final View selectionActions;
     private final HistoryAdapter adapter;
     private final List<Item> items = new ArrayList<>();
     private final Set<Long> selectedItemIds = new HashSet<>();
@@ -79,7 +78,6 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
         list = view.findViewById(R.id.list_history);
         loading = view.findViewById(R.id.progress_history);
         empty = view.findViewById(R.id.text_history_empty);
-        selectionActions = view.findViewById(R.id.panel_selection_actions);
         adapter = new HistoryAdapter(imageLoader, new HistoryAdapter.Callback() {
             @Override
             public void openMedia(Item item) {
@@ -119,8 +117,6 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
         });
         view.findViewById(R.id.button_search).setOnClickListener(v -> applyFilters());
         view.findViewById(R.id.button_clear_search).setOnClickListener(v -> clearSearchPreservingType());
-        view.findViewById(R.id.button_download_selected).setOnClickListener(v -> downloadSelected());
-        view.findViewById(R.id.button_delete_selected).setOnClickListener(v -> confirmDeleteSelected());
         configureDateInput(dateFrom);
         configureDateInput(dateTo);
         configureRecentSpinner();
@@ -381,42 +377,41 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
         } else {
             selectedItemIds.add(item.getId());
         }
-        adapter.setSelectedItemIds(selectedItemIds);
-        updateSelectionUi();
+        render();
+        host.onSelectionChanged(this);
     }
 
-    private boolean isSelectionMode() {
+    @Override
+    public boolean isSelectionMode() {
         return !selectedItemIds.isEmpty();
     }
 
-    private void clearSelection() {
-        selectedItemIds.clear();
-        adapter.setSelectedItemIds(selectedItemIds);
-        updateSelectionUi();
-    }
-
-    private void downloadSelected() {
-        List<Item> selectedItems = selectedItems();
-        clearSelection();
-        host.downloadItemsInBackground(selectedItems);
-    }
-
-    private void confirmDeleteSelected() {
-        List<Item> selectedItems = selectedItems();
-        if (selectedItems.isEmpty()) {
-            clearSelection();
-            return;
+    @Override
+    public void toggleSelectAll() {
+        boolean allSelected = true;
+        for (Item item : items) {
+            if (!selectedItemIds.contains(item.getId())) {
+                allSelected = false;
+                break;
+            }
         }
-        new AlertDialog.Builder(view.getContext())
-                .setTitle(R.string.confirm_delete_title)
-                .setMessage(view.getResources().getString(
-                        R.string.confirm_delete_selected_message, selectedItems.size()))
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.delete, (dialog, which) -> {
-                    clearSelection();
-                    host.deleteItemsOptimistically(selectedItems);
-                })
-                .show();
+        if (allSelected) {
+            clearSelection();
+        } else {
+            selectedItemIds.clear();
+            for (Item item : items) {
+                selectedItemIds.add(item.getId());
+            }
+            render();
+            host.onSelectionChanged(this);
+        }
+    }
+
+    @Override
+    public void clearSelection() {
+        selectedItemIds.clear();
+        render();
+        host.onSelectionChanged(this);
     }
 
     private List<Item> selectedItems() {
@@ -429,6 +424,11 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
         return selected;
     }
 
+    @Override
+    public List<Item> getSelectedItems() {
+        return selectedItems();
+    }
+
     private void pruneSelectionToCurrentItems() {
         Set<Long> availableIds = new HashSet<>();
         for (Item item : items) {
@@ -437,15 +437,10 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
         selectedItemIds.retainAll(availableIds);
     }
 
-    private void updateSelectionUi() {
-        selectionActions.setVisibility(isSelectionMode() ? View.VISIBLE : View.GONE);
-    }
-
     private void render() {
         pruneSelectionToCurrentItems();
         adapter.submit(items);
         adapter.setSelectedItemIds(selectedItemIds);
-        updateSelectionUi();
         empty.setVisibility(items.isEmpty() && !requestInFlight ? View.VISIBLE : View.GONE);
     }
 

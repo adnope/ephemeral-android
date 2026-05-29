@@ -4,6 +4,7 @@
     android:orientation="vertical">
 
     <LinearLayout
+        android:id="@+id/toolbar_normal"
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:background="@color/color_surface"
@@ -28,6 +29,7 @@
             android:background="@drawable/bg_button_secondary"
             android:text="@string/logout" />
     </LinearLayout>
+
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -68,4 +70,81 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1" />
+
+    <LinearLayout
+        android:id="@+id/toolbar_selection"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@color/color_surface"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/space_sm"
+        android:paddingEnd="@dimen/space_sm"
+        android:visibility="gone">
+
+        <ImageButton
+            android:id="@+id/button_selection_cancel"
+            android:layout_width="@dimen/touch_target"
+            android:layout_height="@dimen/touch_target"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/cancel"
+            android:tint="@color/ic_tint"
+            android:src="@drawable/ic_check" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_xs"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/text_selection_count"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:textColor="@color/color_text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/text_selection_size"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:textColor="@color/color_text_secondary"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <ImageButton
+            android:id="@+id/button_selection_delete"
+            android:layout_width="@dimen/touch_target"
+            android:layout_height="@dimen/touch_target"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/delete"
+            android:tint="@color/ic_tint"
+            android:src="@drawable/ic_delete_custom" />
+
+        <ImageButton
+            android:id="@+id/button_selection_download"
+            android:layout_width="@dimen/touch_target"
+            android:layout_height="@dimen/touch_target"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/download"
+            android:tint="@color/ic_tint"
+            android:src="@drawable/ic_download_custom" />
+
+        <ImageButton
+            android:id="@+id/button_selection_all"
+            android:layout_width="@dimen/touch_target"
+            android:layout_height="@dimen/touch_target"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Select All"
+            android:tint="@color/ic_tint"
+            android:src="@drawable/ic_select_all_custom" />
+    </LinearLayout>
 </LinearLayout>
