@@ -9,7 +9,7 @@
     <string name="login">Login</string>
     <string name="chat">Chat</string>
     <string name="history">History</string>
-    <string name="logout">Logout</string>
+    <string name="logout">Log out</string>
     <string name="send">Send</string>
     <string name="attach">Attach</string>
     <string name="retry">Retry</string>
@@ -44,4 +44,12 @@
     <string name="video_processing">Video is still processing.</string>
     <string name="video_playback_failed">Video playback failed.</string>
     <string name="release_api_missing">Release build requires the mobile API endpoint contract before use.</string>
+    <string name="public_link">Public Link</string>
+    <string name="manage_public_link">Manage Link</string>
+    <string name="public_link_created">Public link created</string>
+    <string name="public_link_revoked">Public link revoked</string>
+    <string name="public_link_updated">Public link expiry updated</string>
+    <string name="failed_to_get_public_link">Failed to get public link</string>
+    <string name="failed_to_create_public_link">Failed to create public link</string>
+    <string name="failed_to_revoke_public_link">Failed to revoke public link</string>
 </resources>

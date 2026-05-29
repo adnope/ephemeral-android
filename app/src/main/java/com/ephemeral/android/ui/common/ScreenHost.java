@@ -17,6 +17,8 @@ public interface ScreenHost {
 
     void confirmDelete(Item item, Runnable afterDeleted);
 
+    void managePublicLink(Item item);
+
     void deleteItemsOptimistically(List<Item> items);
 
     void downloadItemsInBackground(List<Item> items);
@@ -28,4 +30,13 @@ public interface ScreenHost {
     void onSessionExpired();
 
     void showMessage(String message);
+
+    interface SelectionClient {
+        void toggleSelectAll();
+        void clearSelection();
+        List<Item> getSelectedItems();
+        boolean isSelectionMode();
+    }
+
+    void onSelectionChanged(SelectionClient client);
 }

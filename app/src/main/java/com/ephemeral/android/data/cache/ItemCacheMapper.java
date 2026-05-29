@@ -27,6 +27,7 @@ final class ItemCacheMapper {
         entity.processing = metadata.isProcessing();
         entity.createdAtEpochMillis = item.getCreatedAtEpochMillis();
         entity.previewable = item.isPreviewable();
+        entity.publicLinkActive = item.isPublicLinkActive();
         entity.cacheBytes = estimateCacheBytes(entity);
         entity.cachedAtEpochMillis = cachedAtEpochMillis;
         return entity;
@@ -43,7 +44,8 @@ final class ItemCacheMapper {
                         clean(entity.thumbRef), clean(entity.playbackRef), clean(entity.playbackMime),
                         clean(entity.hlsRef), entity.processing),
                 entity.createdAtEpochMillis,
-                entity.previewable);
+                entity.previewable,
+                entity.publicLinkActive);
     }
 
     private static long estimateCacheBytes(CachedItemEntity entity) {

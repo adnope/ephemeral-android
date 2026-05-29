@@ -3,12 +3,10 @@ package com.ephemeral.android.ui.history;
 import android.app.AlertDialog;
 import android.app.DatePickerDialog;
 import android.content.Context;
-import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ProgressBar;
@@ -30,10 +28,12 @@ import com.ephemeral.android.data.model.Item;
 import com.ephemeral.android.data.model.ItemTypeFilter;
 import com.ephemeral.android.data.model.Page;
 import com.ephemeral.android.data.model.RecentFilter;
+import com.ephemeral.android.data.model.VisibilityFilter;
+import com.ephemeral.android.ui.common.BackHandler;
 import com.ephemeral.android.ui.common.ImageLoader;
 import com.ephemeral.android.ui.common.ItemEventConsumer;
 import com.ephemeral.android.ui.common.ScreenHost;
-import com.ephemeral.android.ui.common.BackHandler;
+import com.ephemeral.android.ui.common.ViewUi;
 import com.ephemeral.android.util.PaginationMerger;
 
 import java.util.ArrayList;
@@ -43,7 +43,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-public final class HistoryController implements ItemEventConsumer, BackHandler {
+public final class HistoryController implements ItemEventConsumer, BackHandler, ScreenHost.SelectionClient {
     private final View view;
     private final EphemeralApi api;
     private final ScreenHost host;
@@ -51,12 +51,12 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
     private final EditText dateFrom;
     private final EditText dateTo;
     private final Spinner recent;
+    private final Spinner visibility;
     private final CheckBox searchBody;
     private final RadioGroup typeFilter;
     private final RecyclerView list;
     private final ProgressBar loading;
     private final TextView empty;
-    private final View selectionActions;
     private final HistoryAdapter adapter;
     private final List<Item> items = new ArrayList<>();
     private final Set<Long> selectedItemIds = new HashSet<>();
@@ -74,12 +74,12 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
         dateFrom = view.findViewById(R.id.input_date_from);
         dateTo = view.findViewById(R.id.input_date_to);
         recent = view.findViewById(R.id.spinner_recent);
+        visibility = view.findViewById(R.id.spinner_visibility);
         searchBody = view.findViewById(R.id.check_search_body);
         typeFilter = view.findViewById(R.id.group_type_filter);
         list = view.findViewById(R.id.list_history);
         loading = view.findViewById(R.id.progress_history);
         empty = view.findViewById(R.id.text_history_empty);
-        selectionActions = view.findViewById(R.id.panel_selection_actions);
         adapter = new HistoryAdapter(imageLoader, new HistoryAdapter.Callback() {
             @Override
             public void openMedia(Item item) {
@@ -105,6 +105,16 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
             public void select(Item item) {
                 toggleSelection(item);
             }
+
+            @Override
+            public void managePublicLink(Item item) {
+                host.managePublicLink(item);
+            }
+
+            @Override
+            public void delete(Item item) {
+                host.confirmDelete(item, () -> removeItem(item.getId()));
+            }
         });
         GridLayoutManager layoutManager = new GridLayoutManager(view.getContext(), 3);
         list.setLayoutManager(layoutManager);
@@ -119,11 +129,11 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
         });
         view.findViewById(R.id.button_search).setOnClickListener(v -> applyFilters());
         view.findViewById(R.id.button_clear_search).setOnClickListener(v -> clearSearchPreservingType());
-        view.findViewById(R.id.button_download_selected).setOnClickListener(v -> downloadSelected());
-        view.findViewById(R.id.button_delete_selected).setOnClickListener(v -> confirmDeleteSelected());
         configureDateInput(dateFrom);
         configureDateInput(dateTo);
         configureRecentSpinner();
+        configureVisibilitySpinner();
+        ViewUi.prepareHistoryCompoundButtons(typeFilter, searchBody);
         typeFilter.setOnCheckedChangeListener((group, checkedId) -> applyFilters());
         loadFirst();
     }
@@ -139,6 +149,16 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
         }
         refreshPending = false;
         loadFirst();
+    }
+
+    public void updateItemPublicLink(long itemId, boolean active) {
+        for (int i = 0; i < items.size(); i++) {
+            if (items.get(i).getId() == itemId) {
+                items.set(i, items.get(i).withPublicLinkActive(active));
+                adapter.updatePublicLinkActive(itemId, active);
+                return;
+            }
+        }
     }
 
     public void removeItems(Set<Long> itemIds) {
@@ -175,7 +195,7 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
     private void applyFilters() {
         hideKeyboard();
         query = new HistoryQuery(0, selectedType(), search.getText().toString(), searchBody.isChecked(),
-                dateFrom.getText().toString(), dateTo.getText().toString(), selectedRecent());
+                dateFrom.getText().toString(), dateTo.getText().toString(), selectedRecent(), selectedVisibility());
         loadFirst();
     }
 
@@ -185,6 +205,7 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
         dateFrom.setText("");
         dateTo.setText("");
         recent.setSelection(0);
+        visibility.setSelection(0);
         searchBody.setChecked(false);
         query = query.clearSearchPreservingType();
         loadFirst();
@@ -202,7 +223,11 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
                     return;
                 }
                 items.clear();
-                items.addAll(page.getItems());
+                for (Item item : page.getItems()) {
+                    if (item.getType() != com.ephemeral.android.data.model.ItemType.TEXT) {
+                        items.add(item);
+                    }
+                }
                 nextCursor = page.getNextCursor();
                 hasMore = page.hasMore();
                 render();
@@ -232,7 +257,13 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
                 if (startPendingRefresh()) {
                     return;
                 }
-                List<Item> merged = PaginationMerger.appendIgnoringDuplicates(items, page.getItems());
+                java.util.List<Item> filtered = new java.util.ArrayList<>();
+                for (Item item : page.getItems()) {
+                    if (item.getType() != com.ephemeral.android.data.model.ItemType.TEXT) {
+                        filtered.add(item);
+                    }
+                }
+                List<Item> merged = PaginationMerger.appendIgnoringDuplicates(items, filtered);
                 items.clear();
                 items.addAll(merged);
                 nextCursor = page.getNextCursor();
@@ -280,44 +311,27 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
         return index >= 0 && index < values.length ? values[index] : RecentFilter.ANY_TIME;
     }
 
+    private VisibilityFilter selectedVisibility() {
+        int index = visibility.getSelectedItemPosition();
+        VisibilityFilter[] values = VisibilityFilter.values();
+        return index >= 0 && index < values.length ? values[index] : VisibilityFilter.ALL;
+    }
+
     private void configureDateInput(EditText input) {
         input.setFocusable(false);
         input.setOnClickListener(v -> showDatePicker(input));
     }
 
     private void configureRecentSpinner() {
-        CharSequence[] labels = view.getResources().getTextArray(R.array.recent_filter_labels);
-        ArrayAdapter<CharSequence> adapter = new ArrayAdapter<CharSequence>(
-                view.getContext(), android.R.layout.simple_spinner_item, labels) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                return styleRecentSpinnerText(super.getView(position, convertView, parent));
-            }
-
-            @Override
-            public View getDropDownView(int position, View convertView, ViewGroup parent) {
-                return styleRecentSpinnerText(super.getDropDownView(position, convertView, parent));
-            }
-        };
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        recent.setAdapter(adapter);
-        recent.post(() -> {
-            int width = recent.getWidth();
-            if (width > 0) {
-                recent.setDropDownWidth(width);
-                recent.setDropDownHorizontalOffset(0);
-            }
-        });
+        configureFilterSpinner(recent, R.array.recent_filter_labels);
     }
 
-    private View styleRecentSpinnerText(View itemView) {
-        if (itemView instanceof TextView) {
-            TextView textView = (TextView) itemView;
-            textView.setTextSize(TypedValue.COMPLEX_UNIT_PX,
-                    view.getResources().getDimension(R.dimen.recent_spinner_text));
-            textView.setSingleLine(true);
-        }
-        return itemView;
+    private void configureVisibilitySpinner() {
+        configureFilterSpinner(visibility, R.array.visibility_filter_labels);
+    }
+
+    private void configureFilterSpinner(Spinner spinner, int labelsArrayId) {
+        ViewUi.configureFilterSpinner(view.getContext(), spinner, labelsArrayId);
     }
 
     private void showDatePicker(EditText target) {
@@ -381,42 +395,41 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
         } else {
             selectedItemIds.add(item.getId());
         }
-        adapter.setSelectedItemIds(selectedItemIds);
-        updateSelectionUi();
+        render();
+        host.onSelectionChanged(this);
     }
 
-    private boolean isSelectionMode() {
+    @Override
+    public boolean isSelectionMode() {
         return !selectedItemIds.isEmpty();
     }
 
-    private void clearSelection() {
-        selectedItemIds.clear();
-        adapter.setSelectedItemIds(selectedItemIds);
-        updateSelectionUi();
-    }
-
-    private void downloadSelected() {
-        List<Item> selectedItems = selectedItems();
-        clearSelection();
-        host.downloadItemsInBackground(selectedItems);
-    }
-
-    private void confirmDeleteSelected() {
-        List<Item> selectedItems = selectedItems();
-        if (selectedItems.isEmpty()) {
-            clearSelection();
-            return;
+    @Override
+    public void toggleSelectAll() {
+        boolean allSelected = true;
+        for (Item item : items) {
+            if (!selectedItemIds.contains(item.getId())) {
+                allSelected = false;
+                break;
+            }
         }
-        new AlertDialog.Builder(view.getContext())
-                .setTitle(R.string.confirm_delete_title)
-                .setMessage(view.getResources().getString(
-                        R.string.confirm_delete_selected_message, selectedItems.size()))
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.delete, (dialog, which) -> {
-                    clearSelection();
-                    host.deleteItemsOptimistically(selectedItems);
-                })
-                .show();
+        if (allSelected) {
+            clearSelection();
+        } else {
+            selectedItemIds.clear();
+            for (Item item : items) {
+                selectedItemIds.add(item.getId());
+            }
+            render();
+            host.onSelectionChanged(this);
+        }
+    }
+
+    @Override
+    public void clearSelection() {
+        selectedItemIds.clear();
+        render();
+        host.onSelectionChanged(this);
     }
 
     private List<Item> selectedItems() {
@@ -429,6 +442,11 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
         return selected;
     }
 
+    @Override
+    public List<Item> getSelectedItems() {
+        return selectedItems();
+    }
+
     private void pruneSelectionToCurrentItems() {
         Set<Long> availableIds = new HashSet<>();
         for (Item item : items) {
@@ -437,15 +455,10 @@ public final class HistoryController implements ItemEventConsumer, BackHandler {
         selectedItemIds.retainAll(availableIds);
     }
 
-    private void updateSelectionUi() {
-        selectionActions.setVisibility(isSelectionMode() ? View.VISIBLE : View.GONE);
-    }
-
     private void render() {
         pruneSelectionToCurrentItems();
         adapter.submit(items);
         adapter.setSelectedItemIds(selectedItemIds);
-        updateSelectionUi();
         empty.setVisibility(items.isEmpty() && !requestInFlight ? View.VISIBLE : View.GONE);
     }
 

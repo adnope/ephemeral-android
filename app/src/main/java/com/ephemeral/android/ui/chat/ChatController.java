@@ -6,6 +6,7 @@ import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
@@ -28,6 +29,7 @@ import com.ephemeral.android.ui.common.FileResolver;
 import com.ephemeral.android.ui.common.ImageLoader;
 import com.ephemeral.android.ui.common.ItemEventConsumer;
 import com.ephemeral.android.ui.common.ScreenHost;
+import com.ephemeral.android.ui.common.ViewUi;
 import com.ephemeral.android.ui.upload.UploadController;
 
 import java.util.ArrayList;
@@ -36,7 +38,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
-public final class ChatController implements BackHandler, ItemEventConsumer {
+public final class ChatController implements BackHandler, ItemEventConsumer, ScreenHost.SelectionClient {
     public interface FilePicker {
         void openFilePicker();
     }
@@ -52,7 +54,6 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
     private final TextView empty;
     private final EditText composer;
     private final View composerPanel;
-    private final View selectionActions;
     private final ChatAdapter adapter;
     private final UploadController uploadController;
     private final LinearLayoutManager layoutManager;
@@ -77,7 +78,6 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
         empty = view.findViewById(R.id.text_chat_empty);
         composer = view.findViewById(R.id.input_composer);
         composerPanel = view.findViewById(R.id.panel_composer);
-        selectionActions = view.findViewById(R.id.panel_selection_actions);
         adapter = new ChatAdapter(imageLoader, new ChatAdapter.Callback() {
             @Override
             public void retry(ChatEntry entry) {
@@ -108,6 +108,11 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
             public void download(Item item) {
                 host.downloadItem(item);
             }
+
+            @Override
+            public void managePublicLink(Item item) {
+                host.managePublicLink(item);
+            }
         });
         layoutManager = new LinearLayoutManager(view.getContext());
         list.setLayoutManager(layoutManager);
@@ -121,10 +126,12 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
             }
         });
         uploadController = new UploadController(view, api, config, host);
-        view.findViewById(R.id.button_send).setOnClickListener(v -> sendComposer());
-        view.findViewById(R.id.button_attach).setOnClickListener(v -> openFilePicker());
-        view.findViewById(R.id.button_download_selected).setOnClickListener(v -> downloadSelected());
-        view.findViewById(R.id.button_delete_selected).setOnClickListener(v -> confirmDeleteSelected());
+        ImageButton sendButton = view.findViewById(R.id.button_send);
+        ImageButton attachButton = view.findViewById(R.id.button_attach);
+        ViewUi.prepareImageButton(sendButton);
+        ViewUi.prepareImageButton(attachButton);
+        sendButton.setOnClickListener(v -> sendComposer());
+        attachButton.setOnClickListener(v -> openFilePicker());
         composer.setOnKeyListener((v, keyCode, event) -> {
             if (keyCode == KeyEvent.KEYCODE_ENTER
                     && event.getAction() == KeyEvent.ACTION_DOWN
@@ -163,6 +170,20 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
         }
         refreshPending = false;
         loadFirstPage();
+    }
+
+    public void updateItemPublicLink(long itemId, boolean active) {
+        boolean changed = false;
+        for (int i = 0; i < entries.size(); i++) {
+            ChatEntry entry = entries.get(i);
+            if (!entry.isOptimistic() && entry.getItem().getId() == itemId) {
+                entries.set(i, entry.withItem(entry.getItem().withPublicLinkActive(active)));
+                changed = true;
+            }
+        }
+        if (changed) {
+            adapter.updatePublicLinkActive(itemId, active);
+        }
     }
 
     public void removeItems(Set<Long> itemIds) {
@@ -420,42 +441,47 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
         } else {
             selectedItemIds.add(item.getId());
         }
-        adapter.setSelectedItemIds(selectedItemIds);
-        updateSelectionUi();
+        render();
+        host.onSelectionChanged(this);
     }
 
-    private boolean isSelectionMode() {
+    @Override
+    public boolean isSelectionMode() {
         return !selectedItemIds.isEmpty();
     }
 
-    private void clearSelection() {
-        selectedItemIds.clear();
-        adapter.setSelectedItemIds(selectedItemIds);
-        updateSelectionUi();
-    }
-
-    private void downloadSelected() {
-        List<Item> selectedItems = selectedItems();
-        clearSelection();
-        host.downloadItemsInBackground(selectedItems);
-    }
-
-    private void confirmDeleteSelected() {
-        List<Item> selectedItems = selectedItems();
-        if (selectedItems.isEmpty()) {
-            clearSelection();
-            return;
+    @Override
+    public void toggleSelectAll() {
+        List<Item> selectableItems = new ArrayList<>();
+        for (ChatEntry entry : entries) {
+            if (!entry.isOptimistic()) {
+                selectableItems.add(entry.getItem());
+            }
         }
-        new AlertDialog.Builder(view.getContext())
-                .setTitle(R.string.confirm_delete_title)
-                .setMessage(view.getResources().getString(
-                        R.string.confirm_delete_selected_message, selectedItems.size()))
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.delete, (dialog, which) -> {
-                    clearSelection();
-                    host.deleteItemsOptimistically(selectedItems);
-                })
-                .show();
+        boolean allSelected = true;
+        for (Item item : selectableItems) {
+            if (!selectedItemIds.contains(item.getId())) {
+                allSelected = false;
+                break;
+            }
+        }
+        if (allSelected) {
+            clearSelection();
+        } else {
+            selectedItemIds.clear();
+            for (Item item : selectableItems) {
+                selectedItemIds.add(item.getId());
+            }
+            render();
+            host.onSelectionChanged(this);
+        }
+    }
+
+    @Override
+    public void clearSelection() {
+        selectedItemIds.clear();
+        render();
+        host.onSelectionChanged(this);
     }
 
     private List<Item> selectedItems() {
@@ -466,6 +492,11 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
             }
         }
         return selected;
+    }
+
+    @Override
+    public List<Item> getSelectedItems() {
+        return selectedItems();
     }
 
     private void pruneSelectionToCurrentEntries() {
@@ -480,7 +511,6 @@ public final class ChatController implements BackHandler, ItemEventConsumer {
 
     private void updateSelectionUi() {
         boolean selectionMode = isSelectionMode();
-        selectionActions.setVisibility(selectionMode ? View.VISIBLE : View.GONE);
         composerPanel.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
     }
 

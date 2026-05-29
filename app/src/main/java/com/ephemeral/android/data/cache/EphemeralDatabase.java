@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
 
 @Database(
         entities = {CachedItemEntity.class, CacheSyncStateEntity.class},
-        version = 2,
+        version = 3,
         exportSchema = false)
 public abstract class EphemeralDatabase extends RoomDatabase {
     private static final Migration MIGRATION_1_2 = new Migration(1, 2) {
@@ -23,12 +23,19 @@ public abstract class EphemeralDatabase extends RoomDatabase {
         }
     };
 
+    private static final Migration MIGRATION_2_3 = new Migration(2, 3) {
+        @Override
+        public void migrate(SupportSQLiteDatabase database) {
+            database.execSQL("ALTER TABLE cached_items ADD COLUMN publicLinkActive INTEGER NOT NULL DEFAULT 0");
+        }
+    };
+
     public abstract ItemCacheDao itemCacheDao();
 
     public static EphemeralDatabase create(Context context) {
         return Room.databaseBuilder(context.getApplicationContext(), EphemeralDatabase.class,
                         "ephemeral-cache.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build();
     }
 }

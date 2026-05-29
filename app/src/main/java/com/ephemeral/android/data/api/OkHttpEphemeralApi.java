@@ -17,6 +17,8 @@ import com.ephemeral.android.data.model.Item;
 import com.ephemeral.android.data.model.ItemTypeFilter;
 import com.ephemeral.android.data.model.Page;
 import com.ephemeral.android.data.model.RecentFilter;
+import com.ephemeral.android.data.model.PublicLink;
+import com.ephemeral.android.data.model.VisibilityFilter;
 import com.ephemeral.android.data.session.SessionRepository;
 import com.ephemeral.android.util.SimpleJsonParser;
 
@@ -247,6 +249,56 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
     }
 
     @Override
+    public Cancellable downloadZip(String ids, DownloadProgressListener progress,
+            ApiCallback<FileDownloadResult> callback) {
+        CallCancellable cancellable = new CallCancellable();
+        executors.network().execute(() -> downloadZipInternal(ids, progress, callback, cancellable));
+        return cancellable;
+    }
+
+    @Override
+    public void getPublicLink(long itemId, ApiCallback<PublicLink> callback) {
+        Request request;
+        String baseUrl;
+        try {
+            baseUrl = baseUrl().toString();
+            request = jsonRequest("api/items/" + itemId + "/public-link").get().build();
+        } catch (ApiError error) {
+            postError(callback, error);
+            return;
+        }
+        executeJson(request, callback, body -> ApiJsonParser.parsePublicLink(body, baseUrl));
+    }
+
+    @Override
+    public void createPublicLink(long itemId, Long expiresInSeconds, ApiCallback<PublicLink> callback) {
+        Request request;
+        String baseUrl;
+        try {
+            baseUrl = baseUrl().toString();
+            request = jsonRequest("api/items/" + itemId + "/public-link")
+                    .post(RequestBody.create(publicLinkRequestJson(expiresInSeconds), JSON))
+                    .build();
+        } catch (ApiError error) {
+            postError(callback, error);
+            return;
+        }
+        executeJson(request, callback, body -> ApiJsonParser.parsePublicLink(body, baseUrl));
+    }
+
+    @Override
+    public void revokePublicLink(long itemId, ApiCallback<Void> callback) {
+        Request request;
+        try {
+            request = jsonRequest("api/items/" + itemId + "/public-link").delete().build();
+        } catch (ApiError error) {
+            postError(callback, error);
+            return;
+        }
+        executeVoid(request, callback, false);
+    }
+
+    @Override
     public EventSubscription observeItemEvents(ItemEventListener listener) {
         try {
             SseSubscription subscription = new SseSubscription(endpoint("api/events"), listener);
@@ -325,6 +377,43 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
         }
     }
 
+    private void downloadZipInternal(String ids, DownloadProgressListener progress,
+            ApiCallback<FileDownloadResult> callback, CallCancellable cancellable) {
+        File partial = null;
+        try {
+            HttpUrl url = endpointBuilder("api/items/download-zip")
+                    .addQueryParameter("ids", ids)
+                    .build();
+            Request httpRequest = new Request.Builder()
+                    .url(url)
+                    .header("Accept", "*/*")
+                    .get()
+                    .build();
+            Call call = client.newCall(httpRequest);
+            cancellable.setCall(call);
+            try (Response response = call.execute()) {
+                if (!response.isSuccessful()) {
+                    throw errorFromResponse(response, readBody(response));
+                }
+                ResponseBody body = response.body();
+                if (body == null) {
+                    throw new ApiError(ApiErrorCategory.SERVER_ERROR, "Download response was empty.",
+                            response.code(), null);
+                }
+                String filename = filenameFromResponse(response, "ephemeral_download.zip");
+                filename = safeFilename(filename);
+                FileDownloadResult result = saveDownload(body, response, filename, progress, cancellable);
+                postSuccess(callback, result);
+            }
+        } catch (ApiError error) {
+            deletePartial(partial);
+            postError(callback, error);
+        } catch (IOException error) {
+            deletePartial(partial);
+            postError(callback, errorFromIOException(error, cancellable));
+        }
+    }
+
     private <T> void executeJson(Request request, ApiCallback<T> callback, JsonParser<T> parser) {
         executors.network().execute(() -> {
             try (Response response = client.newCall(request).execute()) {
@@ -390,6 +479,10 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
         RecentFilter recent = query.getRecent();
         if (recent != RecentFilter.ANY_TIME && !recent.getWireValue().isEmpty()) {
             builder.addQueryParameter("recent", recent.getWireValue());
+        }
+        VisibilityFilter visibility = query.getVisibility();
+        if (visibility != VisibilityFilter.ALL && !visibility.getWireValue().isEmpty()) {
+            builder.addQueryParameter("visibility", visibility.getWireValue());
         }
         return builder.build();
     }
@@ -579,6 +672,10 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
 
     private String textJson(String text) {
         return "{\"text\":" + quote(text) + "}";
+    }
+
+    private String publicLinkRequestJson(Long expiresInSeconds) {
+        return "{\"expires_in_seconds\":" + (expiresInSeconds == null ? "null" : String.valueOf(expiresInSeconds)) + "}";
     }
 
     private String quote(String value) {

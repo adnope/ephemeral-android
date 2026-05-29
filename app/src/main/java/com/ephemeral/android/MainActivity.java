@@ -1,14 +1,21 @@
 package com.ephemeral.android;
 
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
+import android.widget.ProgressBar;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -35,6 +42,7 @@ import com.ephemeral.android.data.api.ServerState;
 import com.ephemeral.android.data.cache.CachedEphemeralApi;
 import com.ephemeral.android.data.model.Item;
 import com.ephemeral.android.data.model.ItemType;
+import com.ephemeral.android.data.model.PublicLink;
 import com.ephemeral.android.data.session.SessionRepository;
 import com.ephemeral.android.ui.chat.ChatController;
 import com.ephemeral.android.ui.common.BackHandler;
@@ -81,8 +89,13 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     private Screen lastAuthenticatedScreen = Screen.CHAT;
     private View authenticatedShell;
     private SwipePagerLayout authenticatedPager;
-    private Button authenticatedChatTab;
-    private Button authenticatedHistoryTab;
+    private TextView authenticatedChatTab;
+    private TextView authenticatedHistoryTab;
+    private View toolbarNormal;
+    private View toolbarSelection;
+    private TextView textSelectionCount;
+    private TextView textSelectionSize;
+    private SelectionClient currentSelectionClient;
     private ChatController chatController;
     private HistoryController historyController;
     private MediaViewerController mediaViewerController;
@@ -269,6 +282,7 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
             showMessage(getString(R.string.no_downloadable_files_selected));
             return;
         }
+        showMessage("Download started...");
         DownloadBatch batch = new DownloadBatch(downloadableItems.size());
         for (Item item : downloadableItems) {
             api.downloadFile(new FileDownloadRequest(item.getId(), item.getContentRef(), item.getFilename()),
@@ -321,6 +335,65 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     @Override
     public void showMessage(String message) {
         Toast.makeText(this, message == null ? "Request failed." : message, Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onSelectionChanged(SelectionClient client) {
+        currentSelectionClient = client;
+        if (client == null || !client.isSelectionMode()) {
+            if (toolbarSelection != null) {
+                toolbarSelection.setVisibility(View.GONE);
+            }
+            if (toolbarNormal != null) {
+                toolbarNormal.setVisibility(View.VISIBLE);
+            }
+        } else {
+            if (toolbarNormal != null) {
+                // Wait! Tweak 1 says: "The toolbar in multiselect mode should be at the bottom."
+                // This means the normal toolbar at the top stays visible! We don't hide it anymore!
+                // Ah!!! That is an extremely important point!
+                // "1. The toolbar in multiselect mode should be at the bottom."
+                // In a normal app, the top toolbar stays as the normal top bar, and the selection actions are shown at the bottom.
+                // So toolbarNormal should remain visible (View.VISIBLE).
+                toolbarNormal.setVisibility(View.VISIBLE);
+            }
+            if (toolbarSelection != null) {
+                toolbarSelection.setVisibility(View.VISIBLE);
+            }
+            List<Item> selected = client.getSelectedItems();
+            long totalSizeBytes = 0;
+            for (Item item : selected) {
+                long size = item.getFilesizeBytes();
+                if (size > 0) {
+                    totalSizeBytes += size;
+                } else if (item.getType() == ItemType.TEXT && item.getContentRef() != null) {
+                    totalSizeBytes += item.getContentRef().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+                }
+            }
+            if (textSelectionCount != null) {
+                textSelectionCount.setText(String.valueOf(selected.size()));
+            }
+            if (textSelectionSize != null) {
+                textSelectionSize.setText(com.ephemeral.android.util.ByteFormatter.format(totalSizeBytes));
+            }
+        }
+    }
+
+    private void confirmDeleteSelected(List<Item> selectedItems) {
+        if (selectedItems.isEmpty()) {
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.confirm_delete_title)
+                .setMessage(getString(R.string.confirm_delete_selected_message, selectedItems.size()))
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.delete, (dialog, which) -> {
+                    if (currentSelectionClient != null) {
+                        currentSelectionClient.clearSelection();
+                    }
+                    deleteItemsOptimistically(selectedItems);
+                })
+                .show();
     }
 
     private void handleBackPressed() {
@@ -458,16 +531,6 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         return itemIds;
     }
 
-    private List<Item> downloadableItems(List<Item> items) {
-        List<Item> downloadableItems = new ArrayList<>();
-        for (Item item : items) {
-            if (item.getType() != ItemType.TEXT && !item.getContentRef().isEmpty()) {
-                downloadableItems.add(item);
-            }
-        }
-        return downloadableItems;
-    }
-
     private void removeItemsFromAuthenticatedControllers(Set<Long> itemIds) {
         if (chatController != null) {
             chatController.removeItems(itemIds);
@@ -603,10 +666,46 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         authenticatedPager = authenticatedShell.findViewById(R.id.pager_authenticated);
         authenticatedChatTab = authenticatedShell.findViewById(R.id.button_nav_chat);
         authenticatedHistoryTab = authenticatedShell.findViewById(R.id.button_nav_history);
-        authenticatedShell.findViewById(R.id.button_logout).setOnClickListener(v -> logout());
-        authenticatedShell.findViewById(R.id.button_refresh).setOnClickListener(v -> refreshCurrentAuthenticatedPage());
+        TextView logoutButton = authenticatedShell.findViewById(R.id.button_logout);
+        ImageButton refreshButton = authenticatedShell.findViewById(R.id.button_refresh);
+        com.ephemeral.android.ui.common.ViewUi.prepareTextButton(logoutButton);
+        com.ephemeral.android.ui.common.ViewUi.prepareTextButton(authenticatedChatTab);
+        com.ephemeral.android.ui.common.ViewUi.prepareTextButton(authenticatedHistoryTab);
+        com.ephemeral.android.ui.common.ViewUi.prepareImageButton(refreshButton);
+        logoutButton.setOnClickListener(v -> logout());
+        refreshButton.setOnClickListener(v -> refreshCurrentAuthenticatedPage());
         authenticatedChatTab.setOnClickListener(v -> showChat());
         authenticatedHistoryTab.setOnClickListener(v -> showHistory());
+
+        toolbarNormal = authenticatedShell.findViewById(R.id.toolbar_normal);
+        toolbarSelection = authenticatedShell.findViewById(R.id.toolbar_selection);
+        textSelectionCount = authenticatedShell.findViewById(R.id.text_selection_count);
+        textSelectionSize = authenticatedShell.findViewById(R.id.text_selection_size);
+
+        authenticatedShell.findViewById(R.id.button_selection_cancel).setOnClickListener(v -> {
+            if (currentSelectionClient != null) {
+                currentSelectionClient.clearSelection();
+            }
+        });
+        authenticatedShell.findViewById(R.id.button_selection_all).setOnClickListener(v -> {
+            if (currentSelectionClient != null) {
+                currentSelectionClient.toggleSelectAll();
+            }
+        });
+        authenticatedShell.findViewById(R.id.button_selection_download).setOnClickListener(v -> {
+            if (currentSelectionClient != null) {
+                List<Item> selected = currentSelectionClient.getSelectedItems();
+                currentSelectionClient.clearSelection();
+                downloadItemsInBackground(selected);
+            }
+        });
+        authenticatedShell.findViewById(R.id.button_selection_delete).setOnClickListener(v -> {
+            if (currentSelectionClient != null) {
+                List<Item> selected = currentSelectionClient.getSelectedItems();
+                confirmDeleteSelected(selected);
+            }
+        });
+
         chatController = new ChatController(inflater, api, runtimeConfig,
                 this, fileResolver, imageLoader, () -> filePicker.launch(new String[]{"*/*"}));
         historyController = new HistoryController(inflater, api, this, imageLoader);
@@ -617,11 +716,17 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
 
     private void applyAuthenticatedPage(int page) {
         if (page == PAGE_HISTORY) {
+            if (chatController != null) {
+                chatController.clearSelection();
+            }
             screen = Screen.HISTORY;
             lastAuthenticatedScreen = Screen.HISTORY;
             activeEventConsumer = historyController;
             updateAuthenticatedTabs(PAGE_HISTORY);
             return;
+        }
+        if (historyController != null) {
+            historyController.clearSelection();
         }
         screen = Screen.CHAT;
         lastAuthenticatedScreen = Screen.CHAT;
@@ -635,9 +740,9 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         }
         boolean history = page == PAGE_HISTORY;
         authenticatedChatTab.setBackgroundResource(history
-                ? R.drawable.bg_filter_unselected : R.drawable.bg_filter_selected);
+                ? R.drawable.bg_filter_unselected_ripple : R.drawable.bg_filter_selected_ripple);
         authenticatedHistoryTab.setBackgroundResource(history
-                ? R.drawable.bg_filter_selected : R.drawable.bg_filter_unselected);
+                ? R.drawable.bg_filter_selected_ripple : R.drawable.bg_filter_unselected_ripple);
     }
 
     private void refreshCurrentAuthenticatedPage() {
@@ -717,6 +822,16 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         int size() {
             return expectedItemIds.size();
         }
+    }
+
+    private List<Item> downloadableItems(List<Item> items) {
+        List<Item> downloadableItems = new ArrayList<>();
+        for (Item item : items) {
+            if (item.getType() != ItemType.TEXT && !item.getContentRef().isEmpty()) {
+                downloadableItems.add(item);
+            }
+        }
+        return downloadableItems;
     }
 
     private final class DownloadBatch {
@@ -800,5 +915,252 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
             CharSequence text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
             return new PendingShare(text == null ? "" : text.toString(), uris);
         }
+    }
+
+    @Override
+    public void managePublicLink(Item item) {
+        if (item == null || item.getType() == ItemType.TEXT) {
+            return;
+        }
+        LayoutInflater inflater = LayoutInflater.from(this);
+        View dialogView = inflater.inflate(R.layout.dialog_public_link, null);
+
+        ProgressBar progressLoading = dialogView.findViewById(R.id.progress_loading);
+        View layoutContent = dialogView.findViewById(R.id.layout_content);
+        TextView textStatus = dialogView.findViewById(R.id.text_status);
+        View layoutLinkDetails = dialogView.findViewById(R.id.layout_link_details);
+        TextView textUrl = dialogView.findViewById(R.id.text_url);
+        ImageButton buttonCopy = dialogView.findViewById(R.id.button_copy);
+        TextView textExpiryTime = dialogView.findViewById(R.id.text_expiry_time);
+        Spinner spinnerExpiry = dialogView.findViewById(R.id.spinner_expiry);
+        Button buttonAction = dialogView.findViewById(R.id.button_action);
+        Button buttonRevoke = dialogView.findViewById(R.id.button_revoke);
+        Button buttonClose = dialogView.findViewById(R.id.button_close);
+
+        com.ephemeral.android.ui.common.ViewUi.stripButtonShadow(buttonAction);
+        com.ephemeral.android.ui.common.ViewUi.stripButtonShadow(buttonRevoke);
+        com.ephemeral.android.ui.common.ViewUi.stripButtonShadow(buttonClose);
+
+        configureDialogExpirySpinner(spinnerExpiry);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setView(dialogView)
+                .create();
+
+        buttonCopy.setOnClickListener(v -> {
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (clipboard != null) {
+                clipboard.setPrimaryClip(ClipData.newPlainText("Public Link", textUrl.getText().toString()));
+                Toast.makeText(this, R.string.copied, Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        buttonClose.setOnClickListener(v -> dialog.dismiss());
+
+        progressLoading.setVisibility(View.VISIBLE);
+        layoutContent.setVisibility(View.GONE);
+
+        api.getPublicLink(item.getId(), new ApiCallback<PublicLink>() {
+            @Override
+            public void onSuccess(PublicLink link) {
+                progressLoading.setVisibility(View.GONE);
+                layoutContent.setVisibility(View.VISIBLE);
+                bindDialogState(link, item.getId(), dialog, dialogView);
+            }
+
+            @Override
+            public void onError(ApiError error) {
+                showMessage(getString(R.string.failed_to_get_public_link) + " " + error.getMessage());
+                dialog.dismiss();
+            }
+        });
+
+        dialog.show();
+    }
+
+    private void bindDialogState(PublicLink link, long itemId, AlertDialog dialog, View dialogView) {
+        TextView textStatus = dialogView.findViewById(R.id.text_status);
+        View layoutLinkDetails = dialogView.findViewById(R.id.layout_link_details);
+        TextView textUrl = dialogView.findViewById(R.id.text_url);
+        TextView textExpiryTime = dialogView.findViewById(R.id.text_expiry_time);
+        Spinner spinnerExpiry = dialogView.findViewById(R.id.spinner_expiry);
+        Button buttonAction = dialogView.findViewById(R.id.button_action);
+        Button buttonRevoke = dialogView.findViewById(R.id.button_revoke);
+
+        boolean hasLink = link.hasLink();
+        if (hasLink) {
+            textStatus.setText(link.isExpired() ? "Link expired" : "Link active");
+            layoutLinkDetails.setVisibility(View.VISIBLE);
+            textUrl.setText(link.getUrl());
+
+            String expiresAt = link.getExpiresAt();
+            if (expiresAt == null || expiresAt.isEmpty()) {
+                textExpiryTime.setText("Never expires");
+            } else {
+                textExpiryTime.setText("Expires: " + formatIsoDate(expiresAt));
+            }
+
+            buttonAction.setText("Update Expiry");
+            buttonAction.setEnabled(true);
+            buttonAction.setOnClickListener(v -> {
+                long duration = getExpiryDurationSeconds(spinnerExpiry.getSelectedItemPosition());
+                updateLinkInPlace(itemId, duration == -1 ? null : duration, dialog, dialogView);
+            });
+
+            buttonRevoke.setVisibility(View.VISIBLE);
+            buttonRevoke.setEnabled(true);
+            buttonRevoke.setOnClickListener(v -> {
+                revokeLinkInPlace(itemId, dialog, dialogView);
+            });
+        } else {
+            textStatus.setText("No active link");
+            layoutLinkDetails.setVisibility(View.GONE);
+
+            buttonAction.setText("Create Link");
+            buttonAction.setEnabled(true);
+            buttonAction.setOnClickListener(v -> {
+                long duration = getExpiryDurationSeconds(spinnerExpiry.getSelectedItemPosition());
+                createLinkInPlace(itemId, duration == -1 ? null : duration, dialog, dialogView);
+            });
+
+            buttonRevoke.setVisibility(View.GONE);
+        }
+    }
+
+    private void configureDialogExpirySpinner(Spinner spinner) {
+        com.ephemeral.android.ui.common.ViewUi.configureFilterSpinner(
+                this, spinner, R.array.public_link_expiry_labels);
+        com.ephemeral.android.ui.common.ViewUi.syncSpinnerDropDownWidth(spinner);
+    }
+
+    private String formatIsoDate(String isoString) {
+        if (isoString == null || isoString.isEmpty()) {
+            return "";
+        }
+        try {
+            java.time.Instant instant = java.time.Instant.parse(isoString);
+            java.util.Date date = java.util.Date.from(instant);
+            return com.ephemeral.android.util.DateFormatter.detail(date.getTime());
+        } catch (Exception e) {
+            return isoString;
+        }
+    }
+
+    private long getExpiryDurationSeconds(int spinnerPosition) {
+        switch (spinnerPosition) {
+            case 1: return 3600L; // 1 hour
+            case 2: return 86400L; // 24 hours
+            case 3: return 604800L; // 7 days
+            case 4: return 2592000L; // 30 days
+            default: return -1L; // Never
+        }
+    }
+
+    private void syncPublicLinkState(long itemId, boolean active) {
+        if (chatController != null) {
+            chatController.updateItemPublicLink(itemId, active);
+        }
+        if (historyController != null) {
+            historyController.updateItemPublicLink(itemId, active);
+        }
+    }
+
+    private static boolean isPublicLinkActive(PublicLink link) {
+        return link != null && link.isActive();
+    }
+
+    private void createLinkInPlace(long itemId, Long durationSeconds, AlertDialog dialog, View dialogView) {
+        Button buttonAction = dialogView.findViewById(R.id.button_action);
+        buttonAction.setEnabled(false);
+        buttonAction.setText("Creating...");
+        api.createPublicLink(itemId, durationSeconds, new ApiCallback<PublicLink>() {
+            @Override
+            public void onSuccess(PublicLink link) {
+                ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Public Link", link.getUrl()));
+                }
+                showMessage(getString(R.string.public_link_created));
+                bindDialogState(link, itemId, dialog, dialogView);
+                syncPublicLinkState(itemId, isPublicLinkActive(link));
+            }
+
+            @Override
+            public void onError(ApiError error) {
+                buttonAction.setEnabled(true);
+                buttonAction.setText("Create Link");
+                showMessage(getString(R.string.failed_to_create_public_link) + " " + error.getMessage());
+            }
+        });
+    }
+
+    private void updateLinkInPlace(long itemId, Long durationSeconds, AlertDialog dialog, View dialogView) {
+        Button buttonAction = dialogView.findViewById(R.id.button_action);
+        buttonAction.setEnabled(false);
+        buttonAction.setText("Updating...");
+
+        // Optimistic: show success toast immediately
+        showMessage(getString(R.string.public_link_updated));
+        api.createPublicLink(itemId, durationSeconds, new ApiCallback<PublicLink>() {
+            @Override
+            public void onSuccess(PublicLink link) {
+                bindDialogState(link, itemId, dialog, dialogView);
+                syncPublicLinkState(itemId, isPublicLinkActive(link));
+            }
+
+            @Override
+            public void onError(ApiError error) {
+                buttonAction.setEnabled(true);
+                buttonAction.setText("Update Expiry");
+                showMessage(getString(R.string.failed_to_create_public_link) + " " + error.getMessage());
+            }
+        });
+    }
+
+    private void revokeLinkInPlace(long itemId, AlertDialog dialog, View dialogView) {
+        Button buttonRevoke = dialogView.findViewById(R.id.button_revoke);
+        buttonRevoke.setEnabled(false);
+        buttonRevoke.setText("Revoking...");
+
+        // Optimistic: update UI immediately
+        TextView textStatus = dialogView.findViewById(R.id.text_status);
+        textStatus.setText("No active link");
+        View layoutLinkDetails = dialogView.findViewById(R.id.layout_link_details);
+        layoutLinkDetails.setVisibility(View.GONE);
+        Button buttonAction = dialogView.findViewById(R.id.button_action);
+        buttonAction.setText("Create Link");
+        buttonRevoke.setVisibility(View.GONE);
+        syncPublicLinkState(itemId, false);
+
+        showMessage(getString(R.string.public_link_revoked));
+        api.revokePublicLink(itemId, new ApiCallback<Void>() {
+            @Override
+            public void onSuccess(Void value) {
+                buttonAction.setEnabled(true);
+                buttonAction.setOnClickListener(v -> {
+                    Spinner spinnerExpiry = dialogView.findViewById(R.id.spinner_expiry);
+                    long duration = getExpiryDurationSeconds(spinnerExpiry.getSelectedItemPosition());
+                    createLinkInPlace(itemId, duration == -1 ? null : duration, dialog, dialogView);
+                });
+            }
+
+            @Override
+            public void onError(ApiError error) {
+                showMessage(getString(R.string.failed_to_revoke_public_link) + " " + error.getMessage());
+                // Re-fetch state to restore accurate UI
+                api.getPublicLink(itemId, new ApiCallback<PublicLink>() {
+                    @Override
+                    public void onSuccess(PublicLink link) {
+                        bindDialogState(link, itemId, dialog, dialogView);
+                        syncPublicLinkState(itemId, isPublicLinkActive(link));
+                    }
+
+                    @Override
+                    public void onError(ApiError error2) {
+                        dialog.dismiss();
+                    }
+                });
+            }
+        });
     }
 }

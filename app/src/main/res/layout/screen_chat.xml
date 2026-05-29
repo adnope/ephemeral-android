@@ -92,9 +92,10 @@
             android:id="@+id/button_attach"
             android:layout_width="@dimen/touch_target"
             android:layout_height="@dimen/touch_target"
-            android:background="@android:color/transparent"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/attach"
-            android:src="@drawable/ic_attach" />
+            android:src="@drawable/ic_attach"
+            android:tint="@color/ic_tint" />
 
         <EditText
             android:id="@+id/input_composer"
@@ -113,73 +114,10 @@
             android:id="@+id/button_send"
             android:layout_width="@dimen/touch_target"
             android:layout_height="@dimen/touch_target"
-            android:background="@drawable/bg_button_primary"
+            android:background="@drawable/bg_icon_primary_ripple"
             android:contentDescription="@string/send"
-            android:tint="@android:color/white"
-            android:src="@drawable/ic_send" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/panel_selection_actions"
-        android:layout_width="match_parent"
-        android:layout_height="72dp"
-        android:background="@drawable/bg_panel"
-        android:gravity="center"
-        android:orientation="horizontal"
-        android:visibility="gone">
-
-        <LinearLayout
-            android:id="@+id/button_download_selected"
-            android:layout_width="88dp"
-            android:layout_height="match_parent"
-            android:clickable="true"
-            android:contentDescription="@string/download"
-            android:focusable="true"
-            android:foreground="?android:attr/selectableItemBackground"
-            android:gravity="center"
-            android:orientation="vertical">
-
-            <ImageView
-                android:layout_width="28dp"
-                android:layout_height="28dp"
-                android:contentDescription="@string/download"
-                android:src="@drawable/ic_download"
-                android:tint="@color/color_primary" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_xs"
-                android:text="@string/download"
-                android:textColor="@color/color_primary"
-                android:textSize="@dimen/text_small" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/button_delete_selected"
-            android:layout_width="88dp"
-            android:layout_height="match_parent"
-            android:clickable="true"
-            android:contentDescription="@string/delete"
-            android:focusable="true"
-            android:foreground="?android:attr/selectableItemBackground"
-            android:gravity="center"
-            android:orientation="vertical">
-
-            <ImageView
-                android:layout_width="28dp"
-                android:layout_height="28dp"
-                android:contentDescription="@string/delete"
-                android:src="@drawable/ic_delete"
-                android:tint="@color/color_danger" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_xs"
-                android:text="@string/delete"
-                android:textColor="@color/color_danger"
-                android:textSize="@dimen/text_small" />
-        </LinearLayout>
+            android:scaleType="center"
+            android:src="@drawable/ic_send"
+            android:tint="@android:color/white" />
     </LinearLayout>
 </LinearLayout>

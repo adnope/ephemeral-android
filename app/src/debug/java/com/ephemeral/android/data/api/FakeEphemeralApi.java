@@ -10,6 +10,8 @@ import com.ephemeral.android.data.model.ItemMetadata;
 import com.ephemeral.android.data.model.ItemType;
 import com.ephemeral.android.data.model.ItemTypeFilter;
 import com.ephemeral.android.data.model.Page;
+import com.ephemeral.android.data.model.PublicLink;
+import com.ephemeral.android.data.model.VisibilityFilter;
 import com.ephemeral.android.data.session.SessionRepository;
 
 import java.util.ArrayList;
@@ -28,6 +30,7 @@ public final class FakeEphemeralApi implements EphemeralApi {
     private final List<Item> items = new ArrayList<>();
     private final List<ItemEventListener> listeners = new CopyOnWriteArrayList<>();
     private final AtomicLong nextId = new AtomicLong(2000);
+    private final java.util.Map<Long, PublicLink> publicLinks = new java.util.concurrent.ConcurrentHashMap<>();
 
     public FakeEphemeralApi(AppExecutors executors, SessionRepository sessionRepository) {
         this.executors = executors;
@@ -159,6 +162,17 @@ public final class FakeEphemeralApi implements EphemeralApi {
                 if (!q.isEmpty() && !matchesQuery(q, query.isSearchBody(), item)) {
                     continue;
                 }
+                if (query.getVisibility() == VisibilityFilter.PUBLIC) {
+                    PublicLink pl = publicLinks.get(item.getId());
+                    if (pl == null || !"active".equals(pl.getStatus())) {
+                        continue;
+                    }
+                } else if (query.getVisibility() == VisibilityFilter.PRIVATE) {
+                    PublicLink pl = publicLinks.get(item.getId());
+                    if (pl != null && "active".equals(pl.getStatus())) {
+                        continue;
+                    }
+                }
                 filtered.add(item);
             }
         }
@@ -205,6 +219,54 @@ public final class FakeEphemeralApi implements EphemeralApi {
     }
 
     @Override
+    public Cancellable downloadZip(String ids, DownloadProgressListener progress,
+            ApiCallback<FileDownloadResult> callback) {
+        UploadCancellation cancellation = new UploadCancellation();
+        executors.network().execute(() -> {
+            long total = 1024L * 512L;
+            for (int i = 1; i <= 4; i++) {
+                if (cancellation.isCanceled()) {
+                    postError(callback, new ApiError(ApiErrorCategory.CANCELED, "Download canceled."));
+                    return;
+                }
+                long current = (total * i) / 4;
+                executors.main().execute(() -> progress.onProgress(current, total));
+                sleep(120);
+            }
+            executors.main().execute(() -> callback.onSuccess(new FileDownloadResult(Uri.EMPTY, "ephemeral_download.zip")));
+        });
+        return cancellation;
+    }
+
+    @Override
+    public void getPublicLink(long itemId, ApiCallback<PublicLink> callback) {
+        PublicLink link = publicLinks.get(itemId);
+        if (link == null) {
+            link = new PublicLink("none", null, null, null);
+        }
+        delayedSuccess(callback, link);
+    }
+
+    @Override
+    public void createPublicLink(long itemId, Long expiresInSeconds, ApiCallback<PublicLink> callback) {
+        String token = "fake_token_" + itemId;
+        String expiresAt = null;
+        if (expiresInSeconds != null) {
+            java.time.Instant expiry = java.time.Instant.now().plusSeconds(expiresInSeconds);
+            expiresAt = expiry.toString();
+        }
+        PublicLink link = new PublicLink("active", "/share/" + token, token, expiresAt);
+        publicLinks.put(itemId, link);
+        delayedSuccess(callback, link);
+    }
+
+    @Override
+    public void revokePublicLink(long itemId, ApiCallback<Void> callback) {
+        publicLinks.remove(itemId);
+        delayedSuccess(callback, null);
+    }
+
+    @Override
     public EventSubscription observeItemEvents(ItemEventListener listener) {
         listeners.add(listener);
         return () -> listeners.remove(listener);
@@ -230,6 +292,11 @@ public final class FakeEphemeralApi implements EphemeralApi {
         }
     }
 
+    private boolean isLinkActive(long itemId) {
+        PublicLink pl = publicLinks.get(itemId);
+        return pl != null && "active".equals(pl.getStatus());
+    }
+
     private Page<Item> page(List<Item> source, long cursor, int size) {
         int start = 0;
         if (cursor > 0) {
@@ -241,10 +308,14 @@ public final class FakeEphemeralApi implements EphemeralApi {
             }
         }
         int end = Math.min(source.size(), start + size);
-        List<Item> pageItems = new ArrayList<>(source.subList(start, end));
+        List<Item> pageItems = source.subList(start, end);
+        List<Item> mappedItems = new ArrayList<>();
+        for (Item item : pageItems) {
+            mappedItems.add(item.withPublicLinkActive(isLinkActive(item.getId())));
+        }
         boolean hasMore = end < source.size();
-        long nextCursor = hasMore && !pageItems.isEmpty() ? pageItems.get(pageItems.size() - 1).getId() : 0;
-        return new Page<>(pageItems, nextCursor, hasMore);
+        long nextCursor = hasMore && !mappedItems.isEmpty() ? mappedItems.get(mappedItems.size() - 1).getId() : 0;
+        return new Page<>(mappedItems, nextCursor, hasMore);
     }
 
     private void fire(ItemEvent event) {
@@ -266,7 +337,7 @@ public final class FakeEphemeralApi implements EphemeralApi {
 
     private boolean matchesTypeFilter(ItemTypeFilter filter, Item item) {
         if (filter == ItemTypeFilter.ALL) {
-            return true;
+            return item.getType() != com.ephemeral.android.data.model.ItemType.TEXT;
         }
         if (filter == ItemTypeFilter.IMAGES) {
             return item.getType() == ItemType.IMAGE;
