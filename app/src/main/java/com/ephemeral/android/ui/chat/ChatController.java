@@ -6,6 +6,7 @@ import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
@@ -28,6 +29,7 @@ import com.ephemeral.android.ui.common.FileResolver;
 import com.ephemeral.android.ui.common.ImageLoader;
 import com.ephemeral.android.ui.common.ItemEventConsumer;
 import com.ephemeral.android.ui.common.ScreenHost;
+import com.ephemeral.android.ui.common.ViewUi;
 import com.ephemeral.android.ui.upload.UploadController;
 
 import java.util.ArrayList;
@@ -106,6 +108,11 @@ public final class ChatController implements BackHandler, ItemEventConsumer, Scr
             public void download(Item item) {
                 host.downloadItem(item);
             }
+
+            @Override
+            public void managePublicLink(Item item) {
+                host.managePublicLink(item);
+            }
         });
         layoutManager = new LinearLayoutManager(view.getContext());
         list.setLayoutManager(layoutManager);
@@ -119,8 +126,12 @@ public final class ChatController implements BackHandler, ItemEventConsumer, Scr
             }
         });
         uploadController = new UploadController(view, api, config, host);
-        view.findViewById(R.id.button_send).setOnClickListener(v -> sendComposer());
-        view.findViewById(R.id.button_attach).setOnClickListener(v -> openFilePicker());
+        ImageButton sendButton = view.findViewById(R.id.button_send);
+        ImageButton attachButton = view.findViewById(R.id.button_attach);
+        ViewUi.prepareImageButton(sendButton);
+        ViewUi.prepareImageButton(attachButton);
+        sendButton.setOnClickListener(v -> sendComposer());
+        attachButton.setOnClickListener(v -> openFilePicker());
         composer.setOnKeyListener((v, keyCode, event) -> {
             if (keyCode == KeyEvent.KEYCODE_ENTER
                     && event.getAction() == KeyEvent.ACTION_DOWN
@@ -159,6 +170,20 @@ public final class ChatController implements BackHandler, ItemEventConsumer, Scr
         }
         refreshPending = false;
         loadFirstPage();
+    }
+
+    public void updateItemPublicLink(long itemId, boolean active) {
+        boolean changed = false;
+        for (int i = 0; i < entries.size(); i++) {
+            ChatEntry entry = entries.get(i);
+            if (!entry.isOptimistic() && entry.getItem().getId() == itemId) {
+                entries.set(i, entry.withItem(entry.getItem().withPublicLinkActive(active)));
+                changed = true;
+            }
+        }
+        if (changed) {
+            adapter.updatePublicLinkActive(itemId, active);
+        }
     }
 
     public void removeItems(Set<Long> itemIds) {

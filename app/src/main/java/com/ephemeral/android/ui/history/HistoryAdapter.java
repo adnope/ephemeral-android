@@ -5,6 +5,9 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.PopupMenu;
+
+import com.ephemeral.android.ui.common.PopupMenus;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -34,6 +37,10 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
         void download(Item item);
 
         void select(Item item);
+
+        void managePublicLink(Item item);
+
+        void delete(Item item);
     }
 
     static final int TYPE_IMAGE = 1;
@@ -61,6 +68,16 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
         selectedItemIds.clear();
         selectedItemIds.addAll(nextSelectedItemIds);
         notifyDataSetChanged();
+    }
+
+    void updatePublicLinkActive(long itemId, boolean active) {
+        for (int i = 0; i < items.size(); i++) {
+            if (items.get(i).getId() == itemId) {
+                items.set(i, items.get(i).withPublicLinkActive(active));
+                notifyItemChanged(i, "PUBLIC_LINK_UPDATE");
+                return;
+            }
+        }
     }
 
     @Override
@@ -91,6 +108,21 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
             return new MediaHolder(inflater.inflate(R.layout.row_history_video, parent, false));
         }
         return new FileHolder(inflater.inflate(R.layout.row_history_file, parent, false));
+    }
+
+    @Override
+    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position, @NonNull java.util.List<Object> payloads) {
+        if (!payloads.isEmpty() && "PUBLIC_LINK_UPDATE".equals(payloads.get(0))) {
+            Item item = items.get(position);
+            if (holder instanceof MediaHolder) {
+                ((MediaHolder) holder).publicIndicator.setVisibility(item.isPublicLinkActive() ? View.VISIBLE : View.GONE);
+            } else if (holder instanceof FileHolder) {
+                // ((FileHolder) holder).publicIndicator.setVisibility(...) if it exists
+                // In this app, public items indicator is only on MediaHolder or we can just ignore for FileHolder if not implemented
+            }
+            return;
+        }
+        super.onBindViewHolder(holder, position, payloads);
     }
 
     @Override
@@ -132,6 +164,10 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
                 callback.openMedia(item);
             }
         });
+        boolean selectionMode = isSelectionMode();
+        holder.more.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
+        holder.more.setOnClickListener(v -> showOptionsMenu(holder.more, item));
+        holder.publicIndicator.setVisibility(item.isPublicLinkActive() ? View.VISIBLE : View.GONE);
     }
 
     private void bindFile(FileHolder holder, Item item) {
@@ -143,6 +179,7 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
         boolean previewable = item.getType() == ItemType.TEXT || item.isPreviewable();
         holder.view.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
         holder.download.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
+        holder.more.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
         holder.view.setEnabled(true);
         holder.view.setOnClickListener(v -> {
             if (previewable) {
@@ -153,11 +190,13 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
         });
         holder.download.setEnabled(item.getType() != ItemType.TEXT);
         holder.download.setOnClickListener(v -> callback.download(item));
+        holder.more.setOnClickListener(v -> showOptionsMenu(holder.more, item));
         holder.itemView.setOnClickListener(v -> {
             if (isSelectionMode()) {
                 callback.select(item);
             }
         });
+        holder.publicIndicator.setVisibility(item.isPublicLinkActive() ? View.VISIBLE : View.GONE);
     }
 
     private void bindSelection(View itemView, Item item) {
@@ -172,6 +211,25 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
 
     private boolean isSelectionMode() {
         return !selectedItemIds.isEmpty();
+    }
+
+    private void showOptionsMenu(View anchor, Item item) {
+        PopupMenu menu = PopupMenus.create(anchor);
+        if (item.getType() != ItemType.TEXT) {
+            String label = item.isPublicLinkActive() ? "Manage link" : "Share link";
+            menu.getMenu().add(label);
+        }
+        menu.getMenu().add(R.string.delete);
+        menu.setOnMenuItemClickListener(menuItem -> {
+            CharSequence title = menuItem.getTitle();
+            if ("Share link".equals(title) || "Manage link".equals(title)) {
+                callback.managePublicLink(item);
+            } else {
+                callback.delete(item);
+            }
+            return true;
+        });
+        menu.show();
     }
 
     private String metadataLine(Item item) {
@@ -221,12 +279,16 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
         final ImageView thumbnail;
         final TextView filename;
         final TextView metadata;
+        final ImageButton more;
+        final ImageView publicIndicator;
 
         MediaHolder(@NonNull View itemView) {
             super(itemView);
             thumbnail = itemView.findViewById(R.id.image_thumb);
             filename = itemView.findViewById(R.id.text_filename);
             metadata = itemView.findViewById(R.id.text_metadata);
+            more = itemView.findViewById(R.id.button_more);
+            publicIndicator = itemView.findViewById(R.id.image_public_indicator);
         }
     }
 
@@ -235,6 +297,8 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
         final TextView metadata;
         final ImageButton view;
         final ImageButton download;
+        final ImageButton more;
+        final ImageView publicIndicator;
 
         FileHolder(@NonNull View itemView) {
             super(itemView);
@@ -242,6 +306,8 @@ final class HistoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
             metadata = itemView.findViewById(R.id.text_metadata);
             view = itemView.findViewById(R.id.button_view);
             download = itemView.findViewById(R.id.button_download);
+            more = itemView.findViewById(R.id.button_more);
+            publicIndicator = itemView.findViewById(R.id.image_public_indicator);
         }
     }
 }

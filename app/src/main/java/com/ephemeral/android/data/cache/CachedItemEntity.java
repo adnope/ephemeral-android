@@ -28,6 +28,7 @@ public final class CachedItemEntity {
     public boolean processing;
     public long createdAtEpochMillis;
     public boolean previewable;
+    public boolean publicLinkActive;
     public long cacheBytes;
     public long cachedAtEpochMillis;
 }

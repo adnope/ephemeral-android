@@ -22,6 +22,7 @@ import com.ephemeral.android.data.model.FilePreview;
 import com.ephemeral.android.data.model.HistoryQuery;
 import com.ephemeral.android.data.model.Item;
 import com.ephemeral.android.data.model.Page;
+import com.ephemeral.android.data.model.PublicLink;
 import com.ephemeral.android.data.session.SessionRepository;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -125,8 +126,7 @@ public final class CachedEphemeralApi implements EphemeralApi {
             remote.loadChatPage(cursor, new ApiCallback<Page<Item>>() {
                 @Override
                 public void onSuccess(Page<Item> value) {
-                    cache.cacheChatPage(value);
-                    callback.onSuccess(value);
+                    fetchActivePublicLinksAndDeliver(value, true, null, callback);
                 }
 
                 @Override
@@ -177,8 +177,14 @@ public final class CachedEphemeralApi implements EphemeralApi {
             remote.loadHistoryPage(query, new ApiCallback<Page<Item>>() {
                 @Override
                 public void onSuccess(Page<Item> value) {
-                    cache.cacheHistoryPage(query, value);
-                    callback.onSuccess(value);
+                    java.util.List<Item> filtered = new java.util.ArrayList<>();
+                    for (Item item : value.getItems()) {
+                        if (item.getType() != com.ephemeral.android.data.model.ItemType.TEXT) {
+                            filtered.add(item);
+                        }
+                    }
+                    Page<Item> filteredPage = new Page<>(filtered, value.getNextCursor(), value.hasMore());
+                    fetchActivePublicLinksAndDeliver(filteredPage, false, query, callback);
                 }
 
                 @Override
@@ -206,6 +212,21 @@ public final class CachedEphemeralApi implements EphemeralApi {
     public Cancellable downloadZip(String ids, DownloadProgressListener progress,
             ApiCallback<FileDownloadResult> callback) {
         return remote.downloadZip(ids, progress, callback);
+    }
+
+    @Override
+    public void getPublicLink(long itemId, ApiCallback<PublicLink> callback) {
+        remote.getPublicLink(itemId, callback);
+    }
+
+    @Override
+    public void createPublicLink(long itemId, Long expiresInSeconds, ApiCallback<PublicLink> callback) {
+        remote.createPublicLink(itemId, expiresInSeconds, callback);
+    }
+
+    @Override
+    public void revokePublicLink(long itemId, ApiCallback<Void> callback) {
+        remote.revokePublicLink(itemId, callback);
     }
 
     @Override
@@ -262,7 +283,16 @@ public final class CachedEphemeralApi implements EphemeralApi {
         remote.loadChatPage(0, new ApiCallback<Page<Item>>() {
             @Override
             public void onSuccess(Page<Item> value) {
-                cache.cacheChatPage(value);
+                fetchActivePublicLinksAndDeliver(value, true, null, new ApiCallback<Page<Item>>() {
+                    @Override
+                    public void onSuccess(Page<Item> page) {
+                        // Already cached by fetchActivePublicLinksAndDeliver
+                    }
+
+                    @Override
+                    public void onError(ApiError error) {
+                    }
+                });
             }
 
             @Override
@@ -270,6 +300,78 @@ public final class CachedEphemeralApi implements EphemeralApi {
                 // SSE-triggered cache refreshes are best effort; visible error handling stays with UI requests.
             }
         });
+    }
+
+    private void fetchActivePublicLinksAndDeliver(Page<Item> page, boolean isChat, HistoryQuery query, ApiCallback<Page<Item>> callback) {
+        java.util.List<Item> items = page.getItems();
+        if (items.isEmpty()) {
+            if (isChat) {
+                cache.cacheChatPage(page);
+            } else {
+                cache.cacheHistoryPage(query, page);
+            }
+            callback.onSuccess(page);
+            return;
+        }
+
+        java.util.List<Item> targetItems = new java.util.ArrayList<>();
+        for (Item item : items) {
+            if (item.getType() != com.ephemeral.android.data.model.ItemType.TEXT) {
+                targetItems.add(item);
+            }
+        }
+
+        if (targetItems.isEmpty()) {
+            if (isChat) {
+                cache.cacheChatPage(page);
+            } else {
+                cache.cacheHistoryPage(query, page);
+            }
+            callback.onSuccess(page);
+            return;
+        }
+
+        int totalRequests = targetItems.size();
+        java.util.concurrent.atomic.AtomicInteger completedRequests = new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.Map<Long, Boolean> activeStates = new java.util.concurrent.ConcurrentHashMap<>();
+
+        for (Item item : targetItems) {
+            remote.getPublicLink(item.getId(), new ApiCallback<PublicLink>() {
+                @Override
+                public void onSuccess(PublicLink link) {
+                    boolean active = link != null && "active".equals(link.getStatus());
+                    activeStates.put(item.getId(), active);
+                    checkCompletion();
+                }
+
+                @Override
+                public void onError(ApiError error) {
+                    activeStates.put(item.getId(), false);
+                    checkCompletion();
+                }
+
+                private void checkCompletion() {
+                    if (completedRequests.incrementAndGet() == totalRequests) {
+                        java.util.List<Item> updatedItems = new java.util.ArrayList<>();
+                        for (Item it : items) {
+                            if (it.getType() != com.ephemeral.android.data.model.ItemType.TEXT) {
+                                Boolean active = activeStates.get(it.getId());
+                                updatedItems.add(it.withPublicLinkActive(active != null && active));
+                            } else {
+                                updatedItems.add(it);
+                            }
+                        }
+                        Page<Item> updatedPage = new Page<>(updatedItems, page.getNextCursor(), page.hasMore());
+                        if (isChat) {
+                            cache.cacheChatPage(updatedPage);
+                        } else {
+                            cache.cacheHistoryPage(query, updatedPage);
+                        }
+                        callback.onSuccess(updatedPage);
+                    }
+                }
+            });
+        }
     }
 
     private boolean isOffline(ApiError error) {

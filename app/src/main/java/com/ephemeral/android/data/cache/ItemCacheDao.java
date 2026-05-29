@@ -22,6 +22,7 @@ public interface ItemCacheDao {
 
     @Query("SELECT * FROM cached_items "
             + "WHERE (:cursor = 0 OR id < :cursor) "
+            + "AND type != 'text' "
             + "AND (:type = '' OR type = :type) "
             + "AND (:fromMillis = 0 OR createdAtEpochMillis >= :fromMillis) "
             + "AND (:toMillis = 0 OR createdAtEpochMillis <= :toMillis) "

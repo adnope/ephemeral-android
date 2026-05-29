@@ -31,6 +31,10 @@ final class ChatEntry {
         return new ChatEntry(stableId, item, optimisticText, createdAtEpochMillis, status);
     }
 
+    ChatEntry withItem(Item updatedItem) {
+        return new ChatEntry(stableId, updatedItem, optimisticText, createdAtEpochMillis, sendStatus);
+    }
+
     long getStableId() {
         return stableId;
     }

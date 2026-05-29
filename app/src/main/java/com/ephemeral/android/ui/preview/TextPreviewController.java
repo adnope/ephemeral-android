@@ -22,8 +22,9 @@ import com.ephemeral.android.data.model.FilePreview;
 import com.ephemeral.android.data.model.Item;
 import com.ephemeral.android.data.model.ItemMetadata;
 import com.ephemeral.android.data.model.ItemType;
-import com.ephemeral.android.ui.common.ScreenHost;
 import com.ephemeral.android.ui.common.ItemEventConsumer;
+import com.ephemeral.android.ui.common.ScreenHost;
+import com.ephemeral.android.ui.common.ViewUi;
 import com.ephemeral.android.util.ByteFormatter;
 import com.ephemeral.android.util.DateFormatter;
 
@@ -58,6 +59,7 @@ public final class TextPreviewController implements ItemEventConsumer {
         content = view.findViewById(R.id.text_preview_content);
         copy = view.findViewById(R.id.button_copy);
         language = view.findViewById(R.id.spinner_language);
+        ViewUi.applyInstantDropdownAnimation(language);
         view.findViewById(R.id.button_close).setOnClickListener(v -> close());
         copy.setOnClickListener(v -> copyContent());
         view.findViewById(R.id.button_download).setOnClickListener(v -> {

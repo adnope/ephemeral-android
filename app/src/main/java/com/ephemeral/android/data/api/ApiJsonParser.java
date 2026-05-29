@@ -5,6 +5,7 @@ import com.ephemeral.android.data.model.Item;
 import com.ephemeral.android.data.model.ItemMetadata;
 import com.ephemeral.android.data.model.ItemType;
 import com.ephemeral.android.data.model.Page;
+import com.ephemeral.android.data.model.PublicLink;
 import com.ephemeral.android.util.SimpleJsonParser;
 
 import java.net.URI;
@@ -90,6 +91,21 @@ public final class ApiJsonParser {
         return new ServerState(getBoolean(object, "setupRequired", false));
     }
 
+    public static PublicLink parsePublicLink(String json) {
+        return parsePublicLink(json, "");
+    }
+
+    public static PublicLink parsePublicLink(String json, String baseUrl) {
+        Map<String, Object> object = SimpleJsonParser.parseObject(json);
+        String token = getString(object, "token", "");
+        String status = getString(object, "status", token.isEmpty() ? "none" : "active");
+        return new PublicLink(
+                status,
+                resolveRef(baseUrl, getString(object, "url", "")),
+                token,
+                getString(object, "expires_at", ""));
+    }
+
     private static Item itemFromObject(Map<String, Object> object, String baseUrl) {
         Map<String, Object> metadataObject = getObject(object, "metadata");
         ItemType type = ItemType.fromWireName(getString(object, "type", "file"));
@@ -120,7 +136,8 @@ public final class ApiJsonParser {
                 metadata,
                 getCreatedAtEpochMillis(object),
                 getBoolean(object, "previewable",
-                        inferPreviewable(type, getString(object, "filename", ""), metadata.getMime())));
+                        inferPreviewable(type, getString(object, "filename", ""), metadata.getMime())),
+                getBoolean(object, "publicLinkActive", false));
     }
 
     private static Map<String, Object> getObject(Map<String, Object> object, String key) {

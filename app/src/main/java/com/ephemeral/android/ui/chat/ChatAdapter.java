@@ -12,6 +12,8 @@ import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.PopupMenu;
+
+import com.ephemeral.android.ui.common.PopupMenus;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -46,6 +48,8 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         void openPreview(Item item);
 
         void download(Item item);
+
+        void managePublicLink(Item item);
     }
 
     private static final int TYPE_TEXT = 1;
@@ -74,6 +78,18 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         selectedItemIds.clear();
         selectedItemIds.addAll(nextSelectedItemIds);
         notifyDataSetChanged();
+    }
+
+    void updatePublicLinkActive(long itemId, boolean active) {
+        for (int i = 0; i < entries.size(); i++) {
+            ChatEntry entry = entries.get(i);
+            if (!entry.isOptimistic() && entry.getItem().getId() == itemId) {
+                Item updated = entry.getItem().withPublicLinkActive(active);
+                entries.set(i, entry.withItem(updated));
+                notifyItemChanged(i, "PUBLIC_LINK_UPDATE");
+                return;
+            }
+        }
     }
 
     @Override
@@ -110,6 +126,24 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             return new MediaHolder(inflater.inflate(R.layout.row_chat_video, parent, false));
         }
         return new FileHolder(inflater.inflate(R.layout.row_chat_file, parent, false));
+    }
+
+    @Override
+    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position, @NonNull java.util.List<Object> payloads) {
+        if (!payloads.isEmpty() && "PUBLIC_LINK_UPDATE".equals(payloads.get(0))) {
+            ChatEntry entry = entries.get(position);
+            if (!entry.isOptimistic() && entry.getItem() != null) {
+                if (holder instanceof MediaHolder) {
+                    ((MediaHolder) holder).publicIndicator.setVisibility(entry.getItem().isPublicLinkActive() ? View.VISIBLE : View.GONE);
+                } else if (holder instanceof FileHolder) {
+                    // ((FileHolder) holder).publicIndicator.setVisibility(...) if it exists
+                } else if (holder instanceof TextHolder) {
+                    // ((TextHolder) holder).publicIndicator.setVisibility(...) if it exists
+                }
+            }
+            return;
+        }
+        super.onBindViewHolder(holder, position, payloads);
     }
 
     @Override
@@ -153,7 +187,7 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         if (selectable) {
             bindSelection(holder.itemView, holder.body, entry.getItem());
             holder.more.setVisibility(isSelectionMode() ? View.GONE : View.VISIBLE);
-            holder.more.setOnClickListener(v -> showDeleteMenu(holder.more, entry.getItem()));
+            holder.more.setOnClickListener(v -> showOptionsMenu(holder.more, entry.getItem()));
         } else {
             clearSelectionUi(holder.itemView, holder.body);
             holder.more.setVisibility(View.GONE);
@@ -178,13 +212,15 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             }
         });
         holder.more.setVisibility(isSelectionMode() ? View.GONE : View.VISIBLE);
-        holder.more.setOnClickListener(v -> showDeleteMenu(holder.more, item));
+        holder.more.setOnClickListener(v -> showOptionsMenu(holder.more, item));
+        holder.publicIndicator.setVisibility(item.isPublicLinkActive() ? View.VISIBLE : View.GONE);
     }
 
     private void bindFile(FileHolder holder, Item item) {
         bindSelection(holder.itemView, null, item);
         holder.filename.setText(item.getFilename());
-        holder.metadata.setText(metadataLine(item) + " - " + DateFormatter.chat(item.getCreatedAtEpochMillis()));
+        holder.metadata.setText(metadataLine(item));
+        holder.timestamp.setText(DateFormatter.chat(item.getCreatedAtEpochMillis()));
         boolean selectionMode = isSelectionMode();
         holder.view.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
         holder.download.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
@@ -198,12 +234,13 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             }
         });
         holder.download.setOnClickListener(v -> callback.download(item));
-        holder.more.setOnClickListener(v -> showDeleteMenu(holder.more, item));
+        holder.more.setOnClickListener(v -> showOptionsMenu(holder.more, item));
         holder.itemView.setOnClickListener(v -> {
             if (isSelectionMode()) {
                 callback.select(item);
             }
         });
+        holder.publicIndicator.setVisibility(item.isPublicLinkActive() ? View.VISIBLE : View.GONE);
     }
 
     private void bindSelection(View itemView, View childView, Item item) {
@@ -241,11 +278,20 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return !selectedItemIds.isEmpty();
     }
 
-    private void showDeleteMenu(View anchor, Item item) {
-        PopupMenu menu = new PopupMenu(anchor.getContext(), anchor);
+    private void showOptionsMenu(View anchor, Item item) {
+        PopupMenu menu = PopupMenus.create(anchor);
+        if (item.getType() != ItemType.TEXT) {
+            String label = item.isPublicLinkActive() ? "Manage link" : "Share link";
+            menu.getMenu().add(label);
+        }
         menu.getMenu().add(R.string.delete);
         menu.setOnMenuItemClickListener(menuItem -> {
-            callback.delete(item);
+            CharSequence title = menuItem.getTitle();
+            if ("Share link".equals(title) || "Manage link".equals(title)) {
+                callback.managePublicLink(item);
+            } else {
+                callback.delete(item);
+            }
             return true;
         });
         menu.show();
@@ -328,6 +374,7 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         final TextView metadata;
         final TextView timestamp;
         final ImageButton more;
+        final ImageView publicIndicator;
 
         MediaHolder(@NonNull View itemView) {
             super(itemView);
@@ -336,23 +383,28 @@ final class ChatAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             metadata = itemView.findViewById(R.id.text_metadata);
             timestamp = itemView.findViewById(R.id.text_timestamp);
             more = itemView.findViewById(R.id.button_more);
+            publicIndicator = itemView.findViewById(R.id.image_public_indicator);
         }
     }
 
     static final class FileHolder extends RecyclerView.ViewHolder {
         final TextView filename;
         final TextView metadata;
+        final TextView timestamp;
         final ImageButton view;
         final ImageButton download;
         final ImageButton more;
+        final ImageView publicIndicator;
 
         FileHolder(@NonNull View itemView) {
             super(itemView);
             filename = itemView.findViewById(R.id.text_filename);
             metadata = itemView.findViewById(R.id.text_metadata);
+            timestamp = itemView.findViewById(R.id.text_timestamp);
             view = itemView.findViewById(R.id.button_view);
             download = itemView.findViewById(R.id.button_download);
             more = itemView.findViewById(R.id.button_more);
+            publicIndicator = itemView.findViewById(R.id.image_public_indicator);
         }
     }
 }

@@ -17,6 +17,8 @@ public interface ScreenHost {
 
     void confirmDelete(Item item, Runnable afterDeleted);
 
+    void managePublicLink(Item item);
+
     void deleteItemsOptimistically(List<Item> items);
 
     void downloadItemsInBackground(List<Item> items);

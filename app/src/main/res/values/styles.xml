@@ -6,5 +6,61 @@
         <item name="android:navigationBarColor">@color/color_surface</item>
         <item name="android:windowBackground">@color/color_background</item>
         <item name="android:colorAccent">@color/color_primary</item>
+        <item name="android:spinnerStyle">@style/SpinnerEphemeral</item>
+        <item name="android:listPopupWindowStyle">@style/ListPopupWindowEphemeral</item>
+    </style>
+
+    <style name="PopupAnimationInstant">
+        <item name="android:windowEnterAnimation">@anim/popup_instant</item>
+        <item name="android:windowExitAnimation">@anim/popup_instant</item>
+    </style>
+
+    <style name="SpinnerEphemeral" parent="@android:style/Widget.Material.Spinner">
+        <item name="android:popupAnimationStyle">@style/PopupAnimationInstant</item>
+    </style>
+
+    <style name="ListPopupWindowEphemeral" parent="@android:style/Widget.Material.ListPopupWindow">
+        <item name="android:popupBackground">@drawable/bg_popup_menu</item>
+        <item name="android:popupAnimationStyle">@style/PopupAnimationInstant</item>
+    </style>
+
+    <style name="Widget.PopupMenu.Ephemeral" parent="@android:style/Widget.Material.Light.PopupMenu">
+        <item name="android:popupBackground">@drawable/bg_popup_menu</item>
+        <item name="android:itemBackground">@drawable/bg_popup_menu_item_ripple</item>
+    </style>
+
+    <!-- TextView-based control so ripple fills the full view bounds (Material Button insets clip it). -->
+    <style name="TextButtonEphemeral">
+        <item name="android:background">@null</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:foreground">@null</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:elevation">0dp</item>
+        <item name="android:translationZ">0dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
+    <style name="ButtonEphemeral" parent="@style/TextButtonEphemeral" />
+
+    <style name="CompoundButtonHistory" parent="@android:style/Widget.Material.CompoundButton.CheckBox">
+        <item name="android:background">@null</item>
+        <item name="android:foreground">@null</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:paddingStart">4dp</item>
+        <item name="android:paddingEnd">4dp</item>
+    </style>
+
+    <style name="CompoundButtonHistoryRadio" parent="@android:style/Widget.Material.CompoundButton.RadioButton">
+        <item name="android:background">@null</item>
+        <item name="android:foreground">@null</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:paddingStart">4dp</item>
+        <item name="android:paddingEnd">4dp</item>
     </style>
 </resources>

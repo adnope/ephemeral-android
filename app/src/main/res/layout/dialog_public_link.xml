@@ -1,0 +1,144 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="@dimen/space_lg">
+
+    <TextView
+        android:id="@+id/dialog_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="@dimen/space_md"
+        android:text="@string/manage_public_link"
+        android:textColor="@color/color_text_primary"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <ProgressBar
+        android:id="@+id/progress_loading"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/layout_content"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/text_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/space_sm"
+            android:text="No active public link"
+            android:textColor="@color/color_text_primary"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:id="@+id/layout_link_details"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/space_md"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <HorizontalScrollView
+                    android:id="@+id/scroll_url"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_bubble_file"
+                    android:clipToOutline="true"
+                    android:clipToPadding="true"
+                    android:fillViewport="true"
+                    android:overScrollMode="never"
+                    android:padding="@dimen/space_sm"
+                    android:scrollbars="none">
+
+                    <TextView
+                        android:id="@+id/text_url"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:singleLine="true"
+                        android:textColor="@color/color_text_primary"
+                        android:textIsSelectable="true"
+                        android:textSize="12sp" />
+                </HorizontalScrollView>
+
+                <ImageButton
+                    android:id="@+id/button_copy"
+                    android:layout_width="@dimen/touch_target"
+                    android:layout_height="@dimen/touch_target"
+                    android:layout_marginStart="@dimen/space_xs"
+                    android:background="@drawable/bg_icon_medium_ripple"
+                    android:contentDescription="@string/copy"
+                    android:src="@drawable/ic_copy"
+                    android:tint="@color/ic_tint" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/text_expiry_time"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:textColor="@color/color_text_secondary"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/space_xs"
+            android:text="Select expiry time:"
+            android:textColor="@color/color_text_secondary"
+            android:textSize="12sp" />
+
+        <com.ephemeral.android.ui.common.StyledSpinner
+            android:id="@+id/spinner_expiry"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/history_filter_control_height"
+            android:layout_marginBottom="@dimen/space_md"
+            android:background="@drawable/bg_spinner_field"
+            android:spinnerMode="dropdown" />
+
+        <Button
+            android:id="@+id/button_action"
+            style="@style/ButtonEphemeral"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/touch_target"
+            android:layout_marginTop="@dimen/space_sm"
+            android:background="@drawable/bg_button_primary_ripple"
+            android:text="Create Link"
+            android:textColor="@android:color/white" />
+
+        <Button
+            android:id="@+id/button_revoke"
+            style="@style/ButtonEphemeral"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/touch_target"
+            android:layout_marginTop="@dimen/space_sm"
+            android:background="@drawable/bg_button_danger_ripple"
+            android:text="Revoke"
+            android:textColor="@color/color_danger"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/button_close"
+            style="@style/ButtonEphemeral"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/touch_target"
+            android:layout_marginTop="@dimen/space_md"
+            android:background="@drawable/bg_button_secondary_ripple"
+            android:text="@string/close"
+            android:textColor="@color/color_text_primary" />
+
+    </LinearLayout>
+</LinearLayout>

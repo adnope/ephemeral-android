@@ -9,9 +9,15 @@ public final class Item {
     private final ItemMetadata metadata;
     private final long createdAtEpochMillis;
     private final boolean previewable;
+    private final boolean publicLinkActive;
 
     public Item(long id, ItemType type, String contentRef, String filename, long filesizeBytes,
             ItemMetadata metadata, long createdAtEpochMillis, boolean previewable) {
+        this(id, type, contentRef, filename, filesizeBytes, metadata, createdAtEpochMillis, previewable, false);
+    }
+
+    public Item(long id, ItemType type, String contentRef, String filename, long filesizeBytes,
+            ItemMetadata metadata, long createdAtEpochMillis, boolean previewable, boolean publicLinkActive) {
         if (id == 0) {
             throw new IllegalArgumentException("id must be stable and non-zero");
         }
@@ -23,6 +29,7 @@ public final class Item {
         this.metadata = metadata == null ? ItemMetadata.EMPTY : metadata;
         this.createdAtEpochMillis = createdAtEpochMillis;
         this.previewable = previewable;
+        this.publicLinkActive = publicLinkActive;
     }
 
     public long getId() {
@@ -55,6 +62,14 @@ public final class Item {
 
     public boolean isPreviewable() {
         return previewable;
+    }
+
+    public boolean isPublicLinkActive() {
+        return publicLinkActive;
+    }
+
+    public Item withPublicLinkActive(boolean active) {
+        return new Item(id, type, contentRef, filename, filesizeBytes, metadata, createdAtEpochMillis, previewable, active);
     }
 
     public boolean isMedia() {

@@ -17,6 +17,7 @@
     <dimen name="history_filter_row_height">34dp</dimen>
     <dimen name="history_filter_gap">4dp</dimen>
     <dimen name="history_filter_text">12sp</dimen>
+    <dimen name="history_compound_ripple_radius">8dp</dimen>
     <dimen name="recent_spinner_text">13sp</dimen>
     <dimen name="chat_text_action_size">36dp</dimen>
     <dimen name="row_radius">8dp</dimen>

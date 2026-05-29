@@ -4,6 +4,7 @@ import com.ephemeral.android.data.model.FilePreview;
 import com.ephemeral.android.data.model.HistoryQuery;
 import com.ephemeral.android.data.model.Item;
 import com.ephemeral.android.data.model.Page;
+import com.ephemeral.android.data.model.PublicLink;
 
 public interface EphemeralApi {
     void getServerState(ApiCallback<ServerState> callback);
@@ -35,6 +36,12 @@ public interface EphemeralApi {
 
     Cancellable downloadZip(String ids, DownloadProgressListener progress,
             ApiCallback<FileDownloadResult> callback);
+
+    void getPublicLink(long itemId, ApiCallback<PublicLink> callback);
+
+    void createPublicLink(long itemId, Long expiresInSeconds, ApiCallback<PublicLink> callback);
+
+    void revokePublicLink(long itemId, ApiCallback<Void> callback);
 
     EventSubscription observeItemEvents(ItemEventListener listener);
 }
