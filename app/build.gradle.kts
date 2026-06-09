@@ -11,6 +11,25 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+val versionPropertiesFile = rootProject.file("version.properties")
+check(versionPropertiesFile.exists()) { "Missing version.properties. Set VERSION_NAME before building." }
+val versionProperties = Properties()
+versionProperties.load(FileInputStream(versionPropertiesFile))
+
+val appVersionName = versionProperties.getProperty("VERSION_NAME")?.trim()
+    ?: error("VERSION_NAME is required in version.properties.")
+check(appVersionName.isNotEmpty()) { "VERSION_NAME is required in version.properties." }
+
+fun androidVersionCode(versionName: String): Int {
+    val match = Regex("""^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$""").matchEntire(versionName)
+    check(match != null) { "VERSION_NAME must use semantic versioning, for example 0.3.0." }
+    val major = match.groupValues[1].toInt()
+    val minor = match.groupValues[2].toInt()
+    val patch = match.groupValues[3].toInt()
+    check(minor < 100 && patch < 100) { "VERSION_NAME minor and patch must be below 100." }
+    return major * 1_000_000 + minor * 10_000 + patch * 100
+}
+
 android {
     namespace = "com.ephemeral.android"
     compileSdk = 36
@@ -19,8 +38,8 @@ android {
         applicationId = "com.ephemeral.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.2.2"
+        versionCode = androidVersionCode(appVersionName)
+        versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -56,7 +75,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

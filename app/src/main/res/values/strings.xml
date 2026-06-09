@@ -37,6 +37,7 @@
     <string name="delete_items_failed">Failed to delete %1$d item(s)</string>
     <string name="downloaded_files">Downloaded %1$d files</string>
     <string name="download_files_failed">Failed to download %1$d file(s)</string>
+    <string name="download_progress">Downloading %1$d of %2$d file(s) - %3$d%%</string>
     <string name="no_downloadable_files_selected">No downloadable files selected.</string>
     <string name="cancel">Cancel</string>
     <string name="preview_loading">Loading preview...</string>

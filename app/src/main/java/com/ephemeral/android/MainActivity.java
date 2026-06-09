@@ -58,8 +58,10 @@ import com.ephemeral.android.ui.preview.TextPreviewController;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import okhttp3.OkHttpClient;
@@ -95,6 +97,10 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     private View toolbarSelection;
     private TextView textSelectionCount;
     private TextView textSelectionSize;
+    private View downloadProgressPanel;
+    private TextView textDownloadProgress;
+    private ProgressBar progressDownloadTotal;
+    private DownloadBatch activeDownloadBatch;
     private SelectionClient currentSelectionClient;
     private ChatController chatController;
     private HistoryController historyController;
@@ -256,21 +262,29 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
 
     @Override
     public void downloadItem(Item item) {
+        List<Item> items = new ArrayList<>();
+        items.add(item);
+        DownloadBatch batch = startDownloadBatch(items, false);
         api.downloadFile(new FileDownloadRequest(item.getId(), item.getContentRef(), item.getFilename()),
                 new DownloadProgressListener() {
                     @Override
                     public void onProgress(long downloadedBytes, long totalBytes) {
+                        batch.recordProgress(item.getId(), downloadedBytes, totalBytes);
                     }
                 },
                 new ApiCallback<FileDownloadResult>() {
                     @Override
                     public void onSuccess(FileDownloadResult value) {
+                        batch.recordSuccess(item.getId());
                         showMessage("Downloaded: " + value.getFilename());
                     }
 
                     @Override
                     public void onError(ApiError error) {
-                        handleApiError(error);
+                        batch.recordFailure(item.getId(), error);
+                        if (!error.isAuthenticationFailure()) {
+                            handleApiError(error);
+                        }
                     }
                 });
     }
@@ -283,23 +297,24 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
             return;
         }
         showMessage("Download started...");
-        DownloadBatch batch = new DownloadBatch(downloadableItems.size());
+        DownloadBatch batch = startDownloadBatch(downloadableItems, true);
         for (Item item : downloadableItems) {
             api.downloadFile(new FileDownloadRequest(item.getId(), item.getContentRef(), item.getFilename()),
                     new DownloadProgressListener() {
                         @Override
                         public void onProgress(long downloadedBytes, long totalBytes) {
+                            batch.recordProgress(item.getId(), downloadedBytes, totalBytes);
                         }
                     },
                     new ApiCallback<FileDownloadResult>() {
                         @Override
                         public void onSuccess(FileDownloadResult value) {
-                            batch.recordSuccess();
+                            batch.recordSuccess(item.getId());
                         }
 
                         @Override
                         public void onError(ApiError error) {
-                            batch.recordFailure(error);
+                            batch.recordFailure(item.getId(), error);
                         }
                     });
         }
@@ -681,6 +696,9 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         toolbarSelection = authenticatedShell.findViewById(R.id.toolbar_selection);
         textSelectionCount = authenticatedShell.findViewById(R.id.text_selection_count);
         textSelectionSize = authenticatedShell.findViewById(R.id.text_selection_size);
+        downloadProgressPanel = authenticatedShell.findViewById(R.id.panel_download_progress);
+        textDownloadProgress = authenticatedShell.findViewById(R.id.text_download_progress);
+        progressDownloadTotal = authenticatedShell.findViewById(R.id.progress_download_total);
 
         authenticatedShell.findViewById(R.id.button_selection_cancel).setOnClickListener(v -> {
             if (currentSelectionClient != null) {
@@ -760,6 +778,10 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         authenticatedPager = null;
         authenticatedChatTab = null;
         authenticatedHistoryTab = null;
+        downloadProgressPanel = null;
+        textDownloadProgress = null;
+        progressDownloadTotal = null;
+        activeDownloadBatch = null;
         chatController = null;
         historyController = null;
         activeEventConsumer = null;
@@ -834,24 +856,75 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
         return downloadableItems;
     }
 
+    private DownloadBatch startDownloadBatch(List<Item> items, boolean showBatchResult) {
+        DownloadBatch batch = new DownloadBatch(items, showBatchResult);
+        activeDownloadBatch = batch;
+        batch.updateProgressUi();
+        return batch;
+    }
+
+    private void hideDownloadProgressLater(DownloadBatch batch) {
+        if (downloadProgressPanel == null) {
+            return;
+        }
+        downloadProgressPanel.postDelayed(() -> {
+            if (activeDownloadBatch == batch && downloadProgressPanel != null) {
+                downloadProgressPanel.setVisibility(View.GONE);
+                activeDownloadBatch = null;
+            }
+        }, 1200L);
+    }
+
     private final class DownloadBatch {
         private final int total;
+        private final boolean showBatchResult;
+        private final Map<Long, DownloadItemProgress> itemProgress = new HashMap<>();
         private int completed;
         private int failed;
         private boolean authenticationErrorHandled;
 
-        DownloadBatch(int total) {
-            this.total = total;
+        DownloadBatch(List<Item> items, boolean showBatchResult) {
+            this.total = items.size();
+            this.showBatchResult = showBatchResult;
+            for (Item item : items) {
+                long totalBytes = item.getFilesizeBytes() > 0 ? item.getFilesizeBytes() : -1;
+                itemProgress.put(item.getId(), new DownloadItemProgress(totalBytes));
+            }
         }
 
-        void recordSuccess() {
+        void recordProgress(long itemId, long downloadedBytes, long totalBytes) {
+            DownloadItemProgress progress = itemProgress.get(itemId);
+            if (progress == null || progress.complete) {
+                return;
+            }
+            progress.downloadedBytes = Math.max(progress.downloadedBytes, downloadedBytes);
+            if (totalBytes > 0) {
+                progress.totalBytes = totalBytes;
+            }
+            updateProgressUi();
+        }
+
+        void recordSuccess(long itemId) {
+            DownloadItemProgress progress = itemProgress.get(itemId);
+            if (progress != null && !progress.complete) {
+                progress.complete = true;
+                if (progress.totalBytes > 0) {
+                    progress.downloadedBytes = progress.totalBytes;
+                }
+            }
             completed++;
+            updateProgressUi();
             showResultIfComplete();
         }
 
-        void recordFailure(ApiError error) {
+        void recordFailure(long itemId, ApiError error) {
+            DownloadItemProgress progress = itemProgress.get(itemId);
+            if (progress != null && !progress.complete) {
+                progress.complete = true;
+            }
             completed++;
             failed++;
+            updateProgressUi();
             if (error.isAuthenticationFailure() && !authenticationErrorHandled) {
                 authenticationErrorHandled = true;
                 handleApiError(error);
@@ -864,11 +937,53 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
             if (completed < total) {
                 return;
             }
+            updateProgressUi();
+            hideDownloadProgressLater(this);
+            if (!showBatchResult) {
+                return;
+            }
             if (failed == 0) {
                 showMessage(getString(R.string.downloaded_files, total));
             } else {
                 showMessage(getString(R.string.download_files_failed, failed));
             }
+        }
+
+        private void updateProgressUi() {
+            if (activeDownloadBatch != this || downloadProgressPanel == null || textDownloadProgress == null
+                    || progressDownloadTotal == null) {
+                return;
+            }
+            int percent = progressPercent();
+            downloadProgressPanel.setVisibility(View.VISIBLE);
+            progressDownloadTotal.setProgress(percent);
+            textDownloadProgress.setText(getString(R.string.download_progress, completed, total, percent));
+        }
+
+        private int progressPercent() {
+            if (total == 0) {
+                return 0;
+            }
+            long progressSum = 0;
+            for (DownloadItemProgress progress : itemProgress.values()) {
+                if (progress.complete) {
+                    progressSum += 100;
+                } else if (progress.totalBytes > 0) {
+                    long safeDownloaded = Math.min(progress.downloadedBytes, progress.totalBytes);
+                    progressSum += (safeDownloaded * 100) / progress.totalBytes;
+                }
+            }
+            return (int) Math.min(100, progressSum / total);
+        }
+    }
+
+    private static final class DownloadItemProgress {
+        long downloadedBytes;
+        long totalBytes;
+        boolean complete;
+
+        DownloadItemProgress(long totalBytes) {
+            this.totalBytes = totalBytes;
         }
     }
 
