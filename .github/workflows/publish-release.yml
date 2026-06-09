@@ -1,0 +1,131 @@
+name: Publish Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish. Leave empty to use version.properties from main.
+        required: false
+        type: string
+      prerelease:
+        description: Mark this GitHub Release as a prerelease.
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    env:
+      INPUT_VERSION: ${{ inputs.version }}
+      RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+      RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+      RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+      RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Resolve release version
+        run: |
+          set -euo pipefail
+
+          file_version="$(sed -n 's/^VERSION_NAME=//p' version.properties | tr -d '\r')"
+          if [[ -n "$INPUT_VERSION" ]]; then
+            version="$INPUT_VERSION"
+          else
+            version="$file_version"
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must use semantic versioning, for example 0.3.0." >&2
+            exit 1
+          fi
+          if [[ "$version" != "$file_version" ]]; then
+            echo "Requested version $version does not match version.properties ($file_version)." >&2
+            exit 1
+          fi
+          if [[ ! -s "docs/releases/$version.md" ]]; then
+            echo "Missing docs/releases/$version.md. Run Prepare Release and merge the release PR first." >&2
+            exit 1
+          fi
+          if gh release view "$version" >/dev/null 2>&1; then
+            echo "GitHub Release $version already exists." >&2
+            exit 1
+          fi
+
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "NOTES_FILE=docs/releases/$version.md" >> "$GITHUB_ENV"
+
+      - name: Configure release signing
+        run: |
+          set -euo pipefail
+
+          missing=()
+          [[ -n "$RELEASE_KEYSTORE_BASE64" ]] || missing+=(RELEASE_KEYSTORE_BASE64)
+          [[ -n "$RELEASE_KEYSTORE_PASSWORD" ]] || missing+=(RELEASE_KEYSTORE_PASSWORD)
+          [[ -n "$RELEASE_KEY_ALIAS" ]] || missing+=(RELEASE_KEY_ALIAS)
+          [[ -n "$RELEASE_KEY_PASSWORD" ]] || missing+=(RELEASE_KEY_PASSWORD)
+
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing signing secret: %s\n' "${missing[@]}" >&2
+            echo "Configure all release signing secrets before publishing." >&2
+            exit 1
+          fi
+
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > app/release-keystore.jks
+          cat > keystore.properties <<EOF
+storeFile=release-keystore.jks
+storePassword=$RELEASE_KEYSTORE_PASSWORD
+keyAlias=$RELEASE_KEY_ALIAS
+keyPassword=$RELEASE_KEY_PASSWORD
+EOF
+
+      - name: Build signed release APK
+        run: ./gradlew :app:assembleRelease
+
+      - name: Create tag and GitHub Release
+        run: |
+          set -euo pipefail
+
+          apk_path="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f | sort | sed -n '1p')"
+          if [[ -z "$apk_path" ]]; then
+            echo "No release APK found." >&2
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --tags --force
+
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "Tag $VERSION already exists. Reusing it for the GitHub Release."
+          else
+            git tag "$VERSION"
+            git push origin "$VERSION"
+          fi
+
+          args=()
+          if [[ "${{ inputs.prerelease }}" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+
+          gh release create "$VERSION" "$apk_path" \
+            --title "Ephemeral Android $VERSION" \
+            --notes-file "$NOTES_FILE" \
+            "${args[@]}"

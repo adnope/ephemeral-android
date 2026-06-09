@@ -1,0 +1,170 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: New semantic version, for example 0.3.0
+        required: true
+        type: string
+      base_branch:
+        description: Branch to release from
+        required: true
+        default: main
+        type: string
+      release_notes:
+        description: Optional curated Markdown release notes. Leave empty to generate a draft from commits.
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    name: Prepare Release PR
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      BASE_BRANCH: ${{ inputs.base_branch }}
+      RELEASE_NOTES_INPUT: ${{ inputs.release_notes }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.base_branch }}
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Validate release version
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must use semantic versioning, for example 0.3.0." >&2
+            exit 1
+          fi
+
+          git fetch --tags --force
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "Tag $VERSION already exists." >&2
+            exit 1
+          fi
+
+          latest_tag="$(git tag --list '[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | sed -n '1p')"
+          if [[ -n "$latest_tag" ]]; then
+            highest="$(printf '%s\n%s\n' "$latest_tag" "$VERSION" | sort -V | sed -n '$p')"
+            if [[ "$highest" != "$VERSION" || "$latest_tag" == "$VERSION" ]]; then
+              echo "Version $VERSION must be greater than latest tag $latest_tag." >&2
+              exit 1
+            fi
+          fi
+
+          echo "LATEST_TAG=$latest_tag" >> "$GITHUB_ENV"
+
+      - name: Generate release files
+        run: |
+          set -euo pipefail
+
+          release_date="$(date -u +%Y-%m-%d)"
+          notes_file="docs/releases/$VERSION.md"
+          mkdir -p docs/releases
+
+          printf 'VERSION_NAME=%s\n' "$VERSION" > version.properties
+
+          if [[ -n "$RELEASE_NOTES_INPUT" ]]; then
+            printf '%s\n' "$RELEASE_NOTES_INPUT" > "$notes_file"
+          else
+            if [[ -n "${LATEST_TAG:-}" ]]; then
+              commit_range="$LATEST_TAG..HEAD"
+            else
+              commit_range="HEAD"
+            fi
+            commits="$(git log "$commit_range" --no-merges --pretty=format:'- %s (%h)' || true)"
+            if [[ -z "$commits" ]]; then
+              commits="- No notable changes listed yet."
+            fi
+
+            cat > "$notes_file" <<EOF
+## Highlights
+- Review and replace this section with the user-facing value of this release.
+
+## Changes
+$commits
+
+## Verification
+- Release PR builds the debug APK and runs unit tests.
+EOF
+          fi
+
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          release_date = os.popen("date -u +%Y-%m-%d").read().strip()
+          notes = Path(f"docs/releases/{version}.md").read_text().strip()
+          changelog_path = Path("CHANGELOG.md")
+          changelog = changelog_path.read_text() if changelog_path.exists() else "# Changelog\n\n"
+
+          section = f"## {version} - {release_date}\n\n{notes}\n\n"
+          pattern = rf"## {re.escape(version)} - \d{{4}}-\d{{2}}-\d{{2}}\n\n.*?(?=\n## |\Z)"
+          if re.search(pattern, changelog, flags=re.S):
+              changelog = re.sub(pattern, section.rstrip(), changelog, flags=re.S)
+          else:
+              changelog = changelog.rstrip() + "\n\n" + section
+
+          changelog_path.write_text(changelog.rstrip() + "\n")
+          PY
+
+      - name: Verify release PR build
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Open or update release PR
+        run: |
+          set -euo pipefail
+
+          branch="release/$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add version.properties CHANGELOG.md "docs/releases/$VERSION.md"
+
+          if git diff --cached --quiet; then
+            echo "No release file changes to commit."
+          else
+            git commit -m "chore(release): $VERSION"
+          fi
+
+          git push --force-with-lease origin "$branch"
+
+          cat > /tmp/release-pr-body.md <<EOF
+Prepares Ephemeral Android $VERSION for release.
+
+Review checklist:
+- Confirm version.properties contains VERSION_NAME=$VERSION.
+- Review and polish docs/releases/$VERSION.md.
+- Confirm CHANGELOG.md reads well.
+- Merge this PR when ready, then run the Publish Release workflow.
+EOF
+
+          existing_pr="$(gh pr list --head "$branch" --base "$BASE_BRANCH" --state open --json number --jq '.[0].number')"
+          if [[ -n "$existing_pr" ]]; then
+            gh pr edit "$existing_pr" --title "chore(release): $VERSION" --body-file /tmp/release-pr-body.md
+            gh pr view "$existing_pr" --json url --jq .url
+          else
+            gh pr create \
+              --base "$BASE_BRANCH" \
+              --head "$branch" \
+              --title "chore(release): $VERSION" \
+              --body-file /tmp/release-pr-body.md
+          fi
