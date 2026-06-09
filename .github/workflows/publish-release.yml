@@ -89,12 +89,12 @@ jobs:
           fi
 
           printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > app/release-keystore.jks
-          cat > keystore.properties <<EOF
-storeFile=release-keystore.jks
-storePassword=$RELEASE_KEYSTORE_PASSWORD
-keyAlias=$RELEASE_KEY_ALIAS
-keyPassword=$RELEASE_KEY_PASSWORD
-EOF
+          {
+            printf 'storeFile=release-keystore.jks\n'
+            printf 'storePassword=%s\n' "$RELEASE_KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$RELEASE_KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$RELEASE_KEY_PASSWORD"
+          } > keystore.properties
 
       - name: Build signed release APK
         run: ./gradlew :app:assembleRelease

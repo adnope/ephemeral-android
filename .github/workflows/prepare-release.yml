@@ -93,16 +93,14 @@ jobs:
               commits="- No notable changes listed yet."
             fi
 
-            cat > "$notes_file" <<EOF
-## Highlights
-- Review and replace this section with the user-facing value of this release.
-
-## Changes
-$commits
-
-## Verification
-- Release PR builds the debug APK and runs unit tests.
-EOF
+            {
+              printf '## Highlights\n'
+              printf -- '- Review and replace this section with the user-facing value of this release.\n\n'
+              printf '## Changes\n'
+              printf '%s\n\n' "$commits"
+              printf '## Verification\n'
+              printf -- '- Release PR builds the debug APK and runs unit tests.\n'
+            } > "$notes_file"
           fi
 
           python3 - <<'PY'
@@ -147,15 +145,14 @@ EOF
 
           git push --force-with-lease origin "$branch"
 
-          cat > /tmp/release-pr-body.md <<EOF
-Prepares Ephemeral Android $VERSION for release.
-
-Review checklist:
-- Confirm version.properties contains VERSION_NAME=$VERSION.
-- Review and polish docs/releases/$VERSION.md.
-- Confirm CHANGELOG.md reads well.
-- Merge this PR when ready, then run the Publish Release workflow.
-EOF
+          {
+            printf 'Prepares Ephemeral Android %s for release.\n\n' "$VERSION"
+            printf 'Review checklist:\n'
+            printf -- '- Confirm version.properties contains VERSION_NAME=%s.\n' "$VERSION"
+            printf -- '- Review and polish docs/releases/%s.md.\n' "$VERSION"
+            printf -- '- Confirm CHANGELOG.md reads well.\n'
+            printf -- '- Merge this PR when ready, then run the Publish Release workflow.\n'
+          } > /tmp/release-pr-body.md
 
           existing_pr="$(gh pr list --head "$branch" --base "$BASE_BRANCH" --state open --json number --jq '.[0].number')"
           if [[ -n "$existing_pr" ]]; then
