@@ -169,7 +169,7 @@ public final class ChatController implements BackHandler, ItemEventConsumer, Scr
             return;
         }
         refreshPending = false;
-        loadFirstPage();
+        loadFirstPage(true);
     }
 
     public void updateItemPublicLink(long itemId, boolean active) {
@@ -214,14 +214,18 @@ public final class ChatController implements BackHandler, ItemEventConsumer, Scr
         if (event.getType() == ItemEventType.DELETED) {
             removeItem(event.getItemId());
         } else {
-            refreshVisible();
+            refreshFromBackend();
         }
     }
 
     private void loadFirstPage() {
+        loadFirstPage(false);
+    }
+
+    private void loadFirstPage(boolean forceRefresh) {
         requestInFlight = true;
         loading.setVisibility(View.VISIBLE);
-        api.loadChatPage(0, new ApiCallback<Page<Item>>() {
+        ApiCallback<Page<Item>> callback = new ApiCallback<Page<Item>>() {
             @Override
             public void onSuccess(Page<Item> page) {
                 requestInFlight = false;
@@ -248,7 +252,12 @@ public final class ChatController implements BackHandler, ItemEventConsumer, Scr
                 }
                 handleApiError(error);
             }
-        });
+        };
+        if (forceRefresh) {
+            api.refreshChatPage(0, callback);
+        } else {
+            api.loadChatPage(0, callback);
+        }
     }
 
     private void loadOlder() {
@@ -297,14 +306,8 @@ public final class ChatController implements BackHandler, ItemEventConsumer, Scr
             return false;
         }
         refreshPending = false;
-        loadFirstPage();
+        loadFirstPage(true);
         return true;
-    }
-
-    private void refreshVisible() {
-        if (!requestInFlight) {
-            loadFirstPage();
-        }
     }
 
     private void sendComposer() {

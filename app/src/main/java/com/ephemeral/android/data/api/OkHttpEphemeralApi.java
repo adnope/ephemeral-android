@@ -10,6 +10,8 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 
+import androidx.annotation.RequiresApi;
+
 import com.ephemeral.android.AppExecutors;
 import com.ephemeral.android.data.model.FilePreview;
 import com.ephemeral.android.data.model.HistoryQuery;
@@ -415,45 +417,64 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
     }
 
     private <T> void executeJson(Request request, ApiCallback<T> callback, JsonParser<T> parser) {
-        executors.network().execute(() -> {
-            try (Response response = client.newCall(request).execute()) {
-                String body = readBody(response);
-                if (!response.isSuccessful()) {
-                    throw errorFromResponse(response, body);
-                }
-                postSuccess(callback, parser.parse(body));
-            } catch (ApiError error) {
-                postError(callback, error);
-            } catch (IOException error) {
+        client.newCall(request).enqueue(new okhttp3.Callback() {
+            @Override
+            public void onFailure(Call call, IOException error) {
                 postError(callback, errorFromIOException(error, null));
-            } catch (RuntimeException error) {
-                postError(callback, new ApiError(ApiErrorCategory.UNKNOWN,
-                        "Server response could not be parsed.", 0, error));
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    String body = readBody(response);
+                    if (!response.isSuccessful()) {
+                        throw errorFromResponse(response, body);
+                    }
+                    postSuccess(callback, parser.parse(body));
+                } catch (ApiError error) {
+                    postError(callback, error);
+                } catch (IOException error) {
+                    postError(callback, errorFromIOException(error, null));
+                } catch (RuntimeException error) {
+                    postError(callback, new ApiError(ApiErrorCategory.UNKNOWN,
+                            "Server response could not be parsed.", 0, error));
+                }
             }
         });
     }
 
     private void executeVoid(Request request, ApiCallback<Void> callback, boolean clearSession) {
-        executors.network().execute(() -> {
-            try (Response response = client.newCall(request).execute()) {
-                String body = readBody(response);
-                if (!response.isSuccessful() && response.code() != 404) {
-                    throw errorFromResponse(response, body);
-                }
-                if (clearSession) {
-                    clearLocalSession();
-                }
-                postSuccess(callback, null);
-            } catch (ApiError error) {
-                if (clearSession) {
-                    clearLocalSession();
-                }
-                postError(callback, error);
-            } catch (IOException error) {
+        client.newCall(request).enqueue(new okhttp3.Callback() {
+            @Override
+            public void onFailure(Call call, IOException error) {
                 if (clearSession) {
                     clearLocalSession();
                 }
                 postError(callback, errorFromIOException(error, null));
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    String body = readBody(response);
+                    if (!response.isSuccessful() && response.code() != 404) {
+                        throw errorFromResponse(response, body);
+                    }
+                    if (clearSession) {
+                        clearLocalSession();
+                    }
+                    postSuccess(callback, null);
+                } catch (ApiError error) {
+                    if (clearSession) {
+                        clearLocalSession();
+                    }
+                    postError(callback, error);
+                } catch (IOException error) {
+                    if (clearSession) {
+                        clearLocalSession();
+                    }
+                    postError(callback, errorFromIOException(error, null));
+                }
             }
         });
     }
@@ -609,6 +630,9 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
         if ("unsupported_preview".equals(cleanCode)) {
             return ApiErrorCategory.UNSUPPORTED_PREVIEW;
         }
+        if ("unsupported_share".equals(cleanCode)) {
+            return ApiErrorCategory.UNSUPPORTED_SHARE;
+        }
         if ("server_error".equals(cleanCode)) {
             return ApiErrorCategory.SERVER_ERROR;
         }
@@ -645,6 +669,9 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
         }
         if (category == ApiErrorCategory.UNSUPPORTED_PREVIEW) {
             return "Preview is not supported.";
+        }
+        if (category == ApiErrorCategory.UNSUPPORTED_SHARE) {
+            return "Public links are not supported for this item.";
         }
         if (category == ApiErrorCategory.NOT_FOUND) {
             return "Item not found.";
@@ -727,6 +754,7 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
         return saveDownloadToAppExternalDownloads(body, filename, progress, cancellable);
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private FileDownloadResult saveDownloadToMediaStore(ResponseBody body, Response response, String filename,
             DownloadProgressListener progress, CallCancellable cancellable) throws IOException, ApiError {
         ContentResolver resolver = context.getContentResolver();
@@ -786,10 +814,8 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
         return new FileDownloadResult(Uri.fromFile(target), filename);
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private void deleteExistingMediaStoreDownload(ContentResolver resolver, String filename) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            return;
-        }
         String[] projection = {MediaStore.MediaColumns._ID};
         String selection = MediaStore.MediaColumns.DISPLAY_NAME + "=? AND "
                 + MediaStore.MediaColumns.RELATIVE_PATH + "=?";
@@ -1063,6 +1089,7 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
         private final AtomicBoolean stopped = new AtomicBoolean(false);
         private volatile Call call;
         private volatile Future<?> future;
+        private volatile String lastEventId = "";
         private boolean reportedConnectionError;
 
         SseSubscription(HttpUrl url, ItemEventListener listener) {
@@ -1078,11 +1105,13 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
         public void run() {
             long backoff = INITIAL_BACKOFF_MS;
             while (!stopped.get()) {
-                Request request = new Request.Builder()
+                Request.Builder requestBuilder = new Request.Builder()
                         .url(url)
-                        .header("Accept", "text/event-stream")
-                        .get()
-                        .build();
+                        .header("Accept", "text/event-stream");
+                if (!lastEventId.isEmpty()) {
+                    requestBuilder.header("Last-Event-ID", lastEventId);
+                }
+                Request request = requestBuilder.get().build();
                 call = client.newCall(request);
                 try (Response response = call.execute()) {
                     if (!response.isSuccessful()) {
@@ -1140,15 +1169,19 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
         private void readEvents(InputStream stream) throws IOException {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
                 String eventName = "";
+                String eventId = null;
                 StringBuilder data = new StringBuilder();
                 String line;
                 while (!stopped.get() && (line = reader.readLine()) != null) {
                     if (line.isEmpty()) {
-                        dispatchEvent(eventName, data.toString());
+                        dispatchEvent(eventName, data.toString(), eventId);
                         eventName = "";
+                        eventId = null;
                         data.setLength(0);
                     } else if (line.startsWith("event:")) {
                         eventName = line.substring("event:".length()).trim();
+                    } else if (line.startsWith("id:")) {
+                        eventId = SseEventParser.normalizeEventId(line.substring("id:".length()));
                     } else if (line.startsWith("data:")) {
                         if (data.length() > 0) {
                             data.append('\n');
@@ -1159,45 +1192,13 @@ public final class OkHttpEphemeralApi implements EphemeralApi {
             }
         }
 
-        private void dispatchEvent(String eventName, String data) {
-            ItemEventType type = eventType(eventName);
-            if (type == null) {
-                return;
+        private void dispatchEvent(String eventName, String data, String eventId) {
+            if (eventId != null) {
+                lastEventId = eventId;
             }
-            long itemId = parseEventItemId(data);
-            if (itemId <= 0) {
-                return;
-            }
-            executors.main().execute(() -> listener.onEvent(new ItemEvent(type, itemId)));
-        }
-
-        private ItemEventType eventType(String eventName) {
-            if ("item:new".equals(eventName)) {
-                return ItemEventType.NEW;
-            }
-            if ("item:updated".equals(eventName)) {
-                return ItemEventType.UPDATED;
-            }
-            if ("item:deleted".equals(eventName)) {
-                return ItemEventType.DELETED;
-            }
-            return null;
-        }
-
-        private long parseEventItemId(String data) {
-            String clean = data == null ? "" : data.trim();
-            if (clean.isEmpty()) {
-                return 0;
-            }
-            try {
-                if (clean.startsWith("{")) {
-                    Map<String, Object> object = SimpleJsonParser.parseObject(clean);
-                    Object itemId = object.containsKey("itemId") ? object.get("itemId") : object.get("id");
-                    return Long.parseLong(String.valueOf(itemId));
-                }
-                return Long.parseLong(clean);
-            } catch (IllegalArgumentException error) {
-                return 0;
+            ItemEvent event = SseEventParser.parse(eventName, data);
+            if (event != null) {
+                executors.main().execute(() -> listener.onEvent(event));
             }
         }
 

@@ -126,7 +126,7 @@ public final class CachedEphemeralApi implements EphemeralApi {
             remote.loadChatPage(cursor, new ApiCallback<Page<Item>>() {
                 @Override
                 public void onSuccess(Page<Item> value) {
-                    fetchActivePublicLinksAndDeliver(value, true, null, callback);
+                    deliverRemoteChatPage(value, callback);
                 }
 
                 @Override
@@ -136,6 +136,21 @@ public final class CachedEphemeralApi implements EphemeralApi {
                     }
                 }
             });
+        });
+    }
+
+    @Override
+    public void refreshChatPage(long cursor, ApiCallback<Page<Item>> callback) {
+        remote.loadChatPage(cursor, new ApiCallback<Page<Item>>() {
+            @Override
+            public void onSuccess(Page<Item> value) {
+                deliverRemoteChatPage(value, callback);
+            }
+
+            @Override
+            public void onError(ApiError error) {
+                callback.onError(error);
+            }
         });
     }
 
@@ -177,14 +192,7 @@ public final class CachedEphemeralApi implements EphemeralApi {
             remote.loadHistoryPage(query, new ApiCallback<Page<Item>>() {
                 @Override
                 public void onSuccess(Page<Item> value) {
-                    java.util.List<Item> filtered = new java.util.ArrayList<>();
-                    for (Item item : value.getItems()) {
-                        if (item.getType() != com.ephemeral.android.data.model.ItemType.TEXT) {
-                            filtered.add(item);
-                        }
-                    }
-                    Page<Item> filteredPage = new Page<>(filtered, value.getNextCursor(), value.hasMore());
-                    fetchActivePublicLinksAndDeliver(filteredPage, false, query, callback);
+                    deliverRemoteHistoryPage(query, value, callback);
                 }
 
                 @Override
@@ -194,6 +202,21 @@ public final class CachedEphemeralApi implements EphemeralApi {
                     }
                 }
             });
+        });
+    }
+
+    @Override
+    public void refreshHistoryPage(HistoryQuery query, ApiCallback<Page<Item>> callback) {
+        remote.loadHistoryPage(query, new ApiCallback<Page<Item>>() {
+            @Override
+            public void onSuccess(Page<Item> value) {
+                deliverRemoteHistoryPage(query, value, callback);
+            }
+
+            @Override
+            public void onError(ApiError error) {
+                callback.onError(error);
+            }
         });
     }
 
@@ -234,10 +257,10 @@ public final class CachedEphemeralApi implements EphemeralApi {
         return remote.observeItemEvents(new ItemEventListener() {
             @Override
             public void onEvent(ItemEvent event) {
-                if (event.getType() == ItemEventType.DELETED) {
+                if (event.getType() == ItemEventType.RESET) {
+                    cache.clear();
+                } else if (event.getType() == ItemEventType.DELETED) {
                     cache.deleteItem(event.getItemId());
-                } else {
-                    refreshLatestItems();
                 }
                 listener.onEvent(event);
             }
@@ -279,27 +302,20 @@ public final class CachedEphemeralApi implements EphemeralApi {
         };
     }
 
-    private void refreshLatestItems() {
-        remote.loadChatPage(0, new ApiCallback<Page<Item>>() {
-            @Override
-            public void onSuccess(Page<Item> value) {
-                fetchActivePublicLinksAndDeliver(value, true, null, new ApiCallback<Page<Item>>() {
-                    @Override
-                    public void onSuccess(Page<Item> page) {
-                        // Already cached by fetchActivePublicLinksAndDeliver
-                    }
+    private void deliverRemoteChatPage(Page<Item> page, ApiCallback<Page<Item>> callback) {
+        fetchActivePublicLinksAndDeliver(page, true, null, callback);
+    }
 
-                    @Override
-                    public void onError(ApiError error) {
-                    }
-                });
+    private void deliverRemoteHistoryPage(HistoryQuery query, Page<Item> page,
+            ApiCallback<Page<Item>> callback) {
+        java.util.List<Item> filtered = new java.util.ArrayList<>();
+        for (Item item : page.getItems()) {
+            if (item.getType() != com.ephemeral.android.data.model.ItemType.TEXT) {
+                filtered.add(item);
             }
-
-            @Override
-            public void onError(ApiError error) {
-                // SSE-triggered cache refreshes are best effort; visible error handling stays with UI requests.
-            }
-        });
+        }
+        Page<Item> filteredPage = new Page<>(filtered, page.getNextCursor(), page.hasMore());
+        fetchActivePublicLinksAndDeliver(filteredPage, false, query, callback);
     }
 
     private void fetchActivePublicLinksAndDeliver(Page<Item> page, boolean isChat, HistoryQuery query, ApiCallback<Page<Item>> callback) {

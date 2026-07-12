@@ -148,7 +148,7 @@ public final class HistoryController implements ItemEventConsumer, BackHandler, 
             return;
         }
         refreshPending = false;
-        loadFirst();
+        loadFirst(true);
     }
 
     public void updateItemPublicLink(long itemId, boolean active) {
@@ -188,7 +188,7 @@ public final class HistoryController implements ItemEventConsumer, BackHandler, 
         if (event.getType() == ItemEventType.DELETED) {
             removeItem(event.getItemId());
         } else {
-            loadFirst();
+            refreshFromBackend();
         }
     }
 
@@ -212,9 +212,13 @@ public final class HistoryController implements ItemEventConsumer, BackHandler, 
     }
 
     private void loadFirst() {
+        loadFirst(false);
+    }
+
+    private void loadFirst(boolean forceRefresh) {
         requestInFlight = true;
         loading.setVisibility(View.VISIBLE);
-        api.loadHistoryPage(query, new ApiCallback<Page<Item>>() {
+        ApiCallback<Page<Item>> callback = new ApiCallback<Page<Item>>() {
             @Override
             public void onSuccess(Page<Item> page) {
                 requestInFlight = false;
@@ -242,7 +246,12 @@ public final class HistoryController implements ItemEventConsumer, BackHandler, 
                 }
                 handleApiError(error);
             }
-        });
+        };
+        if (forceRefresh) {
+            api.refreshHistoryPage(query, callback);
+        } else {
+            api.loadHistoryPage(query, callback);
+        }
     }
 
     private void loadMore() {
@@ -287,7 +296,7 @@ public final class HistoryController implements ItemEventConsumer, BackHandler, 
             return false;
         }
         refreshPending = false;
-        loadFirst();
+        loadFirst(true);
         return true;
     }
 

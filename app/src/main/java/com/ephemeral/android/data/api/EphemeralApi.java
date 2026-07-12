@@ -21,6 +21,10 @@ public interface EphemeralApi {
 
     void loadChatPage(long cursor, ApiCallback<Page<Item>> callback);
 
+    default void refreshChatPage(long cursor, ApiCallback<Page<Item>> callback) {
+        loadChatPage(cursor, callback);
+    }
+
     void sendTextMessage(String text, ApiCallback<Item> callback);
 
     Cancellable uploadFile(UploadRequest request, UploadProgressListener progress, ApiCallback<Item> callback);
@@ -28,6 +32,10 @@ public interface EphemeralApi {
     void deleteItem(long itemId, ApiCallback<Void> callback);
 
     void loadHistoryPage(HistoryQuery query, ApiCallback<Page<Item>> callback);
+
+    default void refreshHistoryPage(HistoryQuery query, ApiCallback<Page<Item>> callback) {
+        loadHistoryPage(query, callback);
+    }
 
     void loadTextPreview(long itemId, ApiCallback<FilePreview> callback);
 

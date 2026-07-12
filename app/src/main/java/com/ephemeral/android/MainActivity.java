@@ -49,6 +49,7 @@ import com.ephemeral.android.ui.common.BackHandler;
 import com.ephemeral.android.ui.common.FileResolver;
 import com.ephemeral.android.ui.common.ImageLoader;
 import com.ephemeral.android.ui.common.ItemEventConsumer;
+import com.ephemeral.android.ui.common.ItemEventRouter;
 import com.ephemeral.android.ui.common.ScreenHost;
 import com.ephemeral.android.ui.common.SwipePagerLayout;
 import com.ephemeral.android.ui.history.HistoryController;
@@ -427,11 +428,12 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
     }
 
     @Override
-    public boolean dispatchKeyEvent(KeyEvent event) {
-        if (screen == Screen.MEDIA && mediaViewerController != null && mediaViewerController.handleKey(event)) {
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (screen == Screen.MEDIA && mediaViewerController != null
+                && mediaViewerController.handleKey(event)) {
             return true;
         }
-        return super.dispatchKeyEvent(event);
+        return super.onKeyDown(keyCode, event);
     }
 
     private void boot() {
@@ -515,9 +517,7 @@ public final class MainActivity extends ComponentActivity implements ScreenHost 
                 if (event.getType() == ItemEventType.DELETED) {
                     recordDeletedItemEvent(event.getItemId());
                 }
-                if (activeEventConsumer != null) {
-                    activeEventConsumer.onItemEvent(event);
-                }
+                ItemEventRouter.dispatch(event, chatController, historyController, activeEventConsumer);
             }
 
             @Override

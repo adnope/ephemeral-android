@@ -434,7 +434,8 @@ public final class ImageLoader {
             Object tag = target.getTag();
             if (key.equals(tag)) {
                 target.setImageDrawable(drawable);
-                if (drawable instanceof AnimatedImageDrawable) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                        && drawable instanceof AnimatedImageDrawable) {
                     ((AnimatedImageDrawable) drawable).start();
                 }
                 inFlight.remove(target);

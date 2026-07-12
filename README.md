@@ -103,7 +103,7 @@ app/src/main/res/
 
 - API calls use OkHttp and send/receive JSON where supported.
 - Auth is cookie-based, session cookie is persisted locally.
-- Real-time updates use SSE from `/api/events`.
+- Real-time updates use SSE from `/api/events`, resume with `Last-Event-ID`, and reconcile both item collections after `stream:reset`.
 - History thumbnails are kept in memory for the lifetime of the app process after loading.
 - Full-size downloaded images are cached on disk with a 100 MB cache limit.
 - Files downloaded through the Download action are written to the public Downloads collection.

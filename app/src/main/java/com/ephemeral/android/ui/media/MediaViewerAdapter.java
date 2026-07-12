@@ -8,10 +8,12 @@ import android.view.ViewGroup;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.OptIn;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.okhttp.OkHttpDataSource;
@@ -133,6 +135,7 @@ final class MediaViewerAdapter extends RecyclerView.Adapter<MediaViewerAdapter.M
         return validPosition(position) && items.get(position).getType() == ItemType.VIDEO;
     }
 
+    @OptIn(markerClass = UnstableApi.class)
     static final class MediaHolder extends RecyclerView.ViewHolder {
         private final ImageLoader imageLoader;
         private final OkHttpClient httpClient;
